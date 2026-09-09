@@ -1,0 +1,32 @@
+services:
+  valheim:
+    image: ghcr.io/lloesche/valheim-server:latest
+    container_name: valheim
+    restart: unless-stopped
+    stop_grace_period: 2m
+    cap_add:
+      - SYS_NICE
+    mem_limit: ${MEM_LIMIT:-4g}
+    ports:
+      - "${SERVER_PORT:-2456}:${SERVER_PORT:-2456}/udp"
+      - "2457:2457/udp"
+    environment:
+      SERVER_NAME: ${SERVER_NAME}
+      WORLD_NAME: ${WORLD_NAME}
+      SERVER_PASS: ${SERVER_PASS}
+      SERVER_PUBLIC: ${SERVER_PUBLIC:-0}
+      SERVER_PORT: ${SERVER_PORT:-2456}
+      ADMINLIST_IDS: ${ADMINLIST_IDS:-}
+      PERMITTEDLIST_IDS: ${PERMITTEDLIST_IDS:-}
+      TZ: ${TZ:-America/Sao_Paulo}
+      BACKUPS: "true"
+      BACKUPS_CRON: "0 4 * * *"
+      BACKUPS_MAX_AGE: "7"
+      UPDATE_CRON: "0 5 * * *"
+    volumes:
+      - config:/config
+      - server:/opt/valheim
+
+volumes:
+  config:
+  server:

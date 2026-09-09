@@ -1,0 +1,9 @@
+.env
+*.db
+*.db.old
+*.fwl
+adminlist.txt
+permittedlist.txt
+bannedlist.txt
+backups/
+worlds/
