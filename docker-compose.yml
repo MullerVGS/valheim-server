@@ -1,15 +1,35 @@
 services:
   valheim:
-    image: ghcr.io/lloesche/valheim-server:latest
+    # Imagem lloesche/valheim-server-docker (Apache-2.0). Nao contem o jogo:
+    # e Debian + SteamCMD, e o servidor (app 896660) baixa no 1o boot pro volume.
+    # Dentro dela roda um supervisord com 5 processos (crond, bootstrap,
+    # updater, backup, server) — nao e um processo so.
+    #
+    # Tag pinada de proposito: `latest` em servico com estado migra sozinho.
+    # Atualizar = trocar a sha aqui, conscientemente.
+    image: ghcr.io/lloesche/valheim-server:sha-a134fb4dc7a8
     container_name: valheim
     restart: unless-stopped
+
+    # Valheim SO salva o mundo em SIGINT. O entrypoint manda SIGINT e espera;
+    # se o Docker matar antes, perde tudo desde o ultimo autosave.
+    # Este grace period e o que da tempo do save terminar.
     stop_grace_period: 2m
+
+    # O servidor ajusta prioridade de thread no boot. Sem isso, log de erro.
     cap_add:
       - SYS_NICE
+
+    # Teto de RAM: o jogo cresce com o mundo. Protege o resto do host.
     mem_limit: ${MEM_LIMIT:-4g}
+
     ports:
+      # jogo + query. A 2a porta e sempre SERVER_PORT+1: se mudar uma, mude a outra.
       - "${SERVER_PORT:-2456}:${SERVER_PORT:-2456}/udp"
-      - "2457:2457/udp"
+      - "${SERVER_QUERY_PORT:-2457}:${SERVER_QUERY_PORT:-2457}/udp"
+      # a imagem tambem expoe 80/tcp (status) e 9001/tcp (supervisord).
+      # nao publicamos: nao tem auth.
+
     environment:
       SERVER_NAME: ${SERVER_NAME}
       WORLD_NAME: ${WORLD_NAME}
@@ -19,12 +39,21 @@ services:
       ADMINLIST_IDS: ${ADMINLIST_IDS:-}
       PERMITTEDLIST_IDS: ${PERMITTEDLIST_IDS:-}
       TZ: ${TZ:-America/Sao_Paulo}
+
+      # Backup: zipa os mundos e poda os velhos. Roda ANTES do update,
+      # pra existir um save da versao anterior se a nova quebrar algo.
       BACKUPS: "true"
-      BACKUPS_CRON: "0 4 * * *"
+      BACKUPS_CRON: ${BACKUPS_CRON:-0 7 * * *}
       BACKUPS_MAX_AGE: "7"
-      UPDATE_CRON: "0 5 * * *"
+
+      # Update: cliente Steam atualiza sozinho e versao diferente nao conecta,
+      # entao ficar parado tambem quebra. Horario morto porque reinicia o servidor.
+      UPDATE_CRON: ${UPDATE_CRON:-0 8 * * *}
+
     volumes:
+      # config = mundos, listas, backups. E o que importa.
       - config:/config
+      # server = binarios baixados do Steam. Descartavel, rebaixa sozinho.
       - server:/opt/valheim
 
 volumes:
