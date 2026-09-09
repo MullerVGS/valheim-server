@@ -12,7 +12,7 @@ docker compose logs -f
 
 1º boot baixa o servidor (app Steam 896660, ~3 GB) — leva alguns minutos até aceitar conexão.
 
-## Fatos
+## Limites
 
 - Teto do jogo: **10 jogadores**.
 - **UDP 2456-2457**. Trafego de jogo, direto no host — nao passa por reverse proxy.
@@ -30,11 +30,11 @@ Save fica em `/config/worlds_local/<WORLD_NAME>.db|.fwl`.
 
 ## Nao versionar
 
-`.env`, save do mundo (`.db`/`.fwl`), `adminlist.txt`/`permittedlist.txt` (SteamID64 e identificador de terceiro), IP/regra de firewall do host real.
+`.env`, save do mundo (`.db`/`.fwl`), `adminlist.txt`/`permittedlist.txt` (SteamID64 e identificador de terceiro).
 
 ## Firewall
 
-Se subiu e ninguem conecta, suspeitar da camada de firewall antes do jogo: em host com regra em `DOCKER-USER`, porta publicada casa por `--ctorigdstport`, nao `--dport`.
+Se subiu e ninguem conecta, suspeitar da camada de firewall antes do jogo.
 
 ## Alternativa sem abrir porta
 
