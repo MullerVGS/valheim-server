@@ -2,8 +2,11 @@
 *.db
 *.db.old
 *.fwl
+*.fwl.old
+*.fwl2
 adminlist.txt
 permittedlist.txt
 bannedlist.txt
 backups/
 worlds/
+worlds_local/

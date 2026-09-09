@@ -20,17 +20,24 @@ docker compose logs -f
 - RAM: ~3-4 GB vanilla c/ mundo maduro. `MEM_LIMIT` existe pra nao derrubar vizinho de host.
 - `SERVER_PASS`: min 5 chars, nao pode estar contido no `SERVER_NAME`.
 - Mods (BepInEx) passam de 8 GB. Nao cabem em host compartilhado.
+- Tres crons diarios, nao dois: alem do backup e do update declarados no compose, a
+  imagem cria um **restart as 05:10** por default proprio, sem variavel no ambiente.
+  E gateado por `valheim-is-idle`, entao nao derruba ninguem conectado.
 
 ## Dados
 
 Mundo e config em volumes nomeados (`valheim-server_config`, `valheim-server_server`), nunca no repo.
 Backup diario em `/config/backups` dentro do volume — copiar pra fora do host.
 
-Save fica em `/config/worlds_local/<WORLD_NAME>.db|.fwl`.
+Save em `/config/worlds_local/<WORLD_NAME>/` — desde a 1.0 o mundo e um diretorio de
+geracoes fragmentadas (`_main.<n>.fwl2` + chunks), e o servidor escreve `_main.<n>.ok`
+por ultimo: marcador presente = geracao inteira no disco. O formato antigo (`.db`/`.fwl`
+soltos em `worlds_local/`) ainda e lido. Copiar mundo pela metade corrompe — use o zip
+do backup, que fecha em cima do marcador.
 
 ## Nao versionar
 
-`.env`, save do mundo (`.db`/`.fwl`), `adminlist.txt`/`permittedlist.txt` (SteamID64 e identificador de terceiro).
+`.env`, save do mundo (`worlds_local/`, `.db`/`.fwl`/`.fwl2`), `adminlist.txt`/`permittedlist.txt` (SteamID64 e identificador de terceiro).
 
 ## Firewall
 
