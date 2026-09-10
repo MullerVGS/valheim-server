@@ -24,6 +24,27 @@ docker compose logs -f
   imagem cria um **restart as 05:10** por default proprio, sem variavel no ambiente.
   E gateado por `valheim-is-idle`, entao nao derruba ninguem conectado.
 
+## World Modifiers
+
+Dificuldade se ajusta por `SERVER_ARGS`, sem recriar o mundo:
+
+```sh
+SERVER_ARGS=-modifier deathpenalty casual
+```
+
+Chaves: `combat`, `deathpenalty`, `resources`, `raids`, `portals`. Existem tambem
+`-preset <nome>`, que mexe em todos os eixos de uma vez, e `-resetmodifiers`.
+
+Vale para mundo ja existente e preserva o progresso: no load o jogo limpa so as
+chaves de modificador, e as de boss derrotado ficam fora desse intervalo. Tirar o
+argumento depois **nao reverte** -- a chave fica gravada no mundo, reverter e
+`-resetmodifiers`.
+
+Nao desliga achievements da plataforma: o jogo marca o mundo como "cheated" apenas
+quando acha uma global key que a GUI nao conseguiria setar. Um valor fora do slider
+(ex.: `deathpenalty less`) e justamente o que fabrica essa chave -- use so as
+combinacoes que o menu do jogo oferece.
+
 ## Dados
 
 Mundo e config em volumes nomeados (`valheim-server_config`, `valheim-server_server`), nunca no repo.

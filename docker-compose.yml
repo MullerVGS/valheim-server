@@ -40,6 +40,13 @@ services:
       PERMITTEDLIST_IDS: ${PERMITTEDLIST_IDS:-}
       TZ: ${TZ:-America/Sao_Paulo}
 
+      # Argumentos extras do servidor dedicado. E por aqui que entram os World
+      # Modifiers (`-modifier <chave> <valor>`, `-preset`, `-resetmodifiers`):
+      # eles valem para mundo ja existente e nao tocam o progresso, porque o load
+      # so limpa as chaves de modificador, nao as de boss derrotado.
+      # Tirar o argumento NAO reverte -- a chave fica gravada no mundo.
+      SERVER_ARGS: ${SERVER_ARGS:-}
+
       # Backup: zipa os mundos e poda os velhos. Roda ANTES do update,
       # pra existir um save da versao anterior se a nova quebrar algo.
       BACKUPS: "true"
