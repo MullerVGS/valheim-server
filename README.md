@@ -26,24 +26,46 @@ docker compose logs -f
 
 ## World Modifiers
 
-Dificuldade se ajusta por `SERVER_ARGS`, sem recriar o mundo:
+Ajustam a dificuldade sem recriar o mundo. Valem para mundo ja existente e preservam o
+progresso: no load o jogo limpa so as chaves de modificador, e as de boss derrotado ficam
+fora desse intervalo.
+
+Por `SERVER_ARGS` (aplica no boot):
 
 ```sh
-SERVER_ARGS=-modifier deathpenalty casual
+SERVER_ARGS=-resetmodifiers -modifier deathpenalty casual -setkey playerevents
 ```
 
-Chaves: `combat`, `deathpenalty`, `resources`, `raids`, `portals`. Existem tambem
-`-preset <nome>`, que mexe em todos os eixos de uma vez, e `-resetmodifiers`.
+Os args sao processados em ordem, entao comecar por `-resetmodifiers` torna a linha
+declarativa em vez de acumulativa -- importante porque `-setkey` so adiciona.
 
-Vale para mundo ja existente e preserva o progresso: no load o jogo limpa so as
-chaves de modificador, e as de boss derrotado ficam fora desse intervalo. Tirar o
-argumento depois **nao reverte** -- a chave fica gravada no mundo, reverter e
-`-resetmodifiers`.
+- `-modifier <eixo> <valor>` -- eixos: `combat`, `deathpenalty`, `resources`, `raids`,
+  `portals`.
+- `-setkey <chave>` -- os toggles: `playerevents`, `teleportall`, `passivemobs`, `nomap`,
+  `noportals`, `nobossportals`, `nobuildcost`, `fire`.
+- `-preset <nome>` -- mexe em todos os eixos de uma vez.
 
-Nao desliga achievements da plataforma: o jogo marca o mundo como "cheated" apenas
-quando acha uma global key que a GUI nao conseguiria setar. Um valor fora do slider
-(ex.: `deathpenalty less`) e justamente o que fabrica essa chave -- use so as
-combinacoes que o menu do jogo oferece.
+Pelo console, com admin (nao precisa reiniciar):
+
+- `setworldmodifier <eixo> <valor>`, `setworldpreset <nome>`, `resetworldkeys` -- valem na
+  hora e **persistem** no mundo.
+- `setkey` / `removekey` -- valem na hora mas **nao persistem**: some no proximo boot.
+
+Admin sai de `ADMINLIST_IDS` (SteamID64) e do `adminlist.txt` em `/config`. O arquivo e
+relido sozinho a cada 10s, entao promover alguem nao exige restart.
+
+## Achievements
+
+Nao ha risco em usar os modificadores acima. O jogo so marca o mundo como "cheated" quando
+encontra uma global key que a GUI de World Modifiers nao conseguiria setar -- e ai desliga os
+achievements da plataforma. As armadilhas sao duas, ambas via `SERVER_ARGS`, porque o
+`-setkey` **nao valida nada**:
+
+- chave fora da lista de toggles acima (ex.: `nocraftcost`, `worldlevel`, `noworkbench`);
+- valor fora do slider do eixo (ex.: `deathpenalty less`).
+
+O `setkey` do console, ao contrario, valida e recusa a chave. E comando de cheat nao existe
+em servidor dedicado: exige `IsServer`, que nenhum cliente conectado e.
 
 ## Dados
 
