@@ -10,3 +10,6 @@ bannedlist.txt
 backups/
 worlds/
 worlds_local/
+.scratch/
+plugin/**/bin/
+plugin/**/obj/

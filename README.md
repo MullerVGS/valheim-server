@@ -67,6 +67,32 @@ achievements da plataforma. As armadilhas sao duas, ambas via `SERVER_ARGS`, por
 O `setkey` do console, ao contrario, valida e recusa a chave. E comando de cheat nao existe
 em servidor dedicado: exige `IsServer`, que nenhum cliente conectado e.
 
+## Metricas (opt-in)
+
+Plugin BepInEx em `plugin/`, so no servidor: expoe `/metrics` (Prometheus) na porta 9780 do
+container, sem publicar no host. Nao muda nada pro jogador nem desliga achievement
+(`Game.isModded` so e lido no proprio processo).
+
+- por jogador: ping, qualidade, bytes/s contra o teto de 150 KiB/s, fila do Steam, ciclos de
+  envio pulados (fila > 8192), ZDOs enviados/recebidos, ZDOs e mobs (normal/raid) que o cliente
+  dele simula;
+- servidor: FPS (mira 30), tempo de frame, tempo por subsistema, save, desconexoes, GC;
+- raid ativa, rodando ou pausada, e quem esta no raio;
+- RPC por metodo (recebido, enviado, roteado).
+
+```sh
+# 1. BEPINEX=true no .env e subir: o boot baixa o BepInExPack pro volume
+docker compose up -d
+# 2. compilar contra o servidor do volume; grava em /config/bepinex/plugins
+docker compose --profile plugin run --rm plugin-build
+# 3. carregar
+docker compose restart valheim
+```
+
+Coleta: ponha o container na rede do seu Prometheus/vmagent e raspe `valheim:9780/metrics`
+(5s mostra a dinamica de uma raid). `valheim_exporter_patch_ok=0` = uma atualizacao do jogo mudou
+um metodo: so aquela metrica some, o jogo segue. O BepInEx atualiza sozinho (`latest`).
+
 ## Dados
 
 Mundo e config em volumes nomeados (`valheim-server_config`, `valheim-server_server`), nunca no repo.

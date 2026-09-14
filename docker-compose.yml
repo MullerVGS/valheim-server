@@ -57,11 +57,29 @@ services:
       # entao ficar parado tambem quebra. Horario morto porque reinicia o servidor.
       UPDATE_CRON: ${UPDATE_CRON:-0 8 * * *}
 
+      # BepInEx, so para carregar o plugin de metricas (plugin/). Opt-in.
+      # A imagem baixa o BepInExPack `latest` do Thunderstore no boot e em cada update.
+      BEPINEX: ${BEPINEX:-false}
+
     volumes:
       # config = mundos, listas, backups. E o que importa.
       - config:/config
       # server = binarios baixados do Steam. Descartavel, rebaixa sozinho.
       - server:/opt/valheim
+
+  # Compila o plugin de metricas contra o servidor instalado no volume (os binarios do
+  # jogo nao vao pro repo) e grava a DLL em /config/bepinex/plugins. Precisa de um boot
+  # com BEPINEX=true antes, pra existir o BepInEx no volume:
+  #   docker compose --profile plugin run --rm plugin-build
+  plugin-build:
+    image: mcr.microsoft.com/dotnet/sdk:8.0.425
+    profiles: [plugin]
+    working_dir: /src/src
+    command: sh -c 'dotnet build -c Release -o /tmp/out && install -D -m 644 /tmp/out/ValheimMetrics.dll /config/bepinex/plugins/ValheimMetrics.dll'
+    volumes:
+      - ./plugin:/src
+      - server:/opt/valheim:ro
+      - config:/config
 
 volumes:
   config:

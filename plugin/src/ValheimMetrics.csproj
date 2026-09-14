@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>ValheimMetrics</AssemblyName>
+    <RootNamespace>ValheimMetrics</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <!-- Referencias vem do servidor instalado (volume), nunca do repo: sao binarios do jogo. -->
+    <ValheimManaged Condition="'$(ValheimManaged)' == ''">/opt/valheim/server/valheim_server_Data/Managed</ValheimManaged>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">/opt/valheim/bepinex/BepInEx/core</BepInExCore>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="assembly_valheim" HintPath="$(ValheimManaged)/assembly_valheim.dll" Private="false" />
+    <Reference Include="assembly_utils" HintPath="$(ValheimManaged)/assembly_utils.dll" Private="false" />
+    <Reference Include="com.rlabrecque.steamworks.net" HintPath="$(ValheimManaged)/com.rlabrecque.steamworks.net.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(ValheimManaged)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ValheimManaged)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="BepInEx" HintPath="$(BepInExCore)/BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BepInExCore)/0Harmony.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(BepInExCore)/Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+
+</Project>
