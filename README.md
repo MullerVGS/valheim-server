@@ -74,9 +74,9 @@ container, sem publicar no host. Nao muda nada pro jogador nem desliga achieveme
 (`Game.isModded` so e lido no proprio processo).
 
 - por jogador: ping, qualidade, bytes/s contra o teto de 150 KiB/s, fila do Steam, ciclos de
-  envio pulados (fila > 8192), ZDOs enviados/recebidos, ZDOs e mobs (normal/raid) que o cliente
-  dele simula;
-- servidor: FPS (mira 30), tempo de frame, tempo por subsistema, save, desconexoes, GC;
+  envio pulados (fila > limite - 2048), ZDOs enviados/recebidos, ZDOs e mobs (normal/raid) que o
+  cliente dele simula;
+- servidor: FPS (o jogo mira 30), tempo de frame, tempo por subsistema, save, desconexoes, GC;
 - raid ativa, rodando ou pausada, e quem esta no raio;
 - RPC por metodo (recebido, enviado, roteado).
 
@@ -92,6 +92,36 @@ docker compose restart valheim
 Coleta: ponha o container na rede do seu Prometheus/vmagent e raspe `valheim:9780/metrics`
 (5s mostra a dinamica de uma raid). `valheim_exporter_patch_ok=0` = uma atualizacao do jogo mudou
 um metodo: so aquela metrica some, o jogo segue. O BepInEx atualiza sozinho (`latest`).
+
+### Ajustes de rede (opt-in)
+
+O servidor dedicado manda ZDOs (objetos, mobs, jogadores) a **um jogador por frame**, num pacote
+de ate **10240 bytes**, e mira **30 FPS**. Com N jogadores, cada um recebe no maximo
+`10240 * 30 / (N+1)` bytes/s: 34 KB/s com 8. Com o grupo espalhado ou muito mob por perto, o
+pacote enche e a sincronizacao atrasa (mob teleportando, item demorando pra entrar no inventario),
+com CPU sobrando. `valheim_zdo_send_cycles_total` e os bytes de saida por jogador mostram isso.
+
+O plugin mexe nas duas alavancas, so com a variavel definida no `.env`:
+
+| Variavel | Jogo | Faixa | Efeito |
+| --- | --- | --- | --- |
+| `VALHEIM_SERVER_FPS` | 30 | 30..360 | ciclo por jogador em `(N+1)/FPS` s; CPU do servidor sobe junto |
+| `VALHEIM_ZDO_SEND_LIMIT_BYTES` | 10240 | 10240..65536 | bytes por ciclo; fila acima de `limite - 2048` pula o ciclo |
+
+Os dois multiplicam: 60 FPS e 20480 bytes dao 4x (136 KB/s por jogador com 8). O teto do Steam
+continua 150 KiB/s por conexao, e o que passa dele espera na fila. O envio do **cliente** para o
+servidor tem os mesmos limites no jogo dele, e nao muda por aqui.
+
+Aplicar exige recriar o container (variavel nova) e, por causa do BepInEx, um restart depois:
+
+```sh
+docker compose up -d                      # derruba quem estiver jogando
+docker compose restart valheim            # o plugin so carrega no boot seguinte
+```
+
+Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_limit_bytes` e
+`valheim_exporter_patch_ok{target="ZDOMan.SendZDOs#transpiler"}`. Rollback = apagar as variaveis e
+repetir os dois comandos.
 
 ## Dados
 

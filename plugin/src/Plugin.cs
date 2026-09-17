@@ -6,6 +6,7 @@ using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Collectors;
 using ValheimMetrics.Exposition;
+using ValheimMetrics.Tuning;
 
 namespace ValheimMetrics
 {
@@ -13,7 +14,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -63,6 +64,8 @@ namespace ValheimMetrics
                 }
             }
 
+            ServerTuning.Install(_harmony, TuningSettings.Parse(Environment.GetEnvironmentVariable));
+
             var port = ReadPort();
             _server = new MetricsServer(port, Log);
             _server.Start();
@@ -86,6 +89,7 @@ namespace ValheimMetrics
         {
             double now = Time.realtimeSinceStartupAsDouble;
             ServerCollector.OnFrame(now, Time.unscaledDeltaTime);
+            ServerTuning.OnFrame();
             if (now < _nextSnapshot)
                 return;
             _nextSnapshot = now + 1;

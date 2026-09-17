@@ -2,14 +2,16 @@ using System;
 using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Exposition;
+using ValheimMetrics.Tuning;
 
 namespace ValheimMetrics.Collectors
 {
-    // ZDOMan.SendZDOs so envia se sobram 2048 dos 10240 bytes: fila acima de 8192 pula o ciclo
-    // daquele jogador. GetSendQueueSize so e chamado de dentro de SendZDOs.
+    // ZDOMan.SendZDOs so envia se sobram 2048 bytes do limite (10240 no jogo, ajustavel em
+    // ServerTuning): fila acima disso pula o ciclo daquele jogador. GetSendQueueSize so e chamado
+    // de dentro de SendZDOs.
     sealed class ThrottleCollector : ICollector
     {
-        const int QueueSkipAbove = 10240 - 2048;
+        const int MinAvailableBytes = 2048;
 
         static AccessTools.FieldRef<object, ZNetPeer> _peerOf;
         static AccessTools.FieldRef<ZDOMan, int> _zdosSent;
@@ -79,7 +81,7 @@ namespace ValheimMetrics.Collectors
                 return;
             player.QueueAtDecision = __result;
             player.QueueMax.Add(Time.realtimeSinceStartupAsDouble, __result);
-            if (__result > QueueSkipAbove)
+            if (__result > ServerTuning.SendLimitBytes - MinAvailableBytes)
                 player.SendCyclesThrottled++;
         }
 
@@ -131,7 +133,10 @@ namespace ValheimMetrics.Collectors
             foreach (var p in players)
                 w.Sample("valheim_zdo_send_cycles_total", p.SendCycles, p.Labels);
 
-            w.Family("valheim_zdo_send_cycles_throttled_total", "counter", "Ciclos pulados porque a fila passou de 8192 bytes.");
+            w.Family("valheim_zdo_send_limit_bytes", "gauge", "Limite de bytes por ciclo de envio de ZDO (10240 no jogo).");
+            w.Sample("valheim_zdo_send_limit_bytes", ServerTuning.SendLimitBytes);
+
+            w.Family("valheim_zdo_send_cycles_throttled_total", "counter", "Ciclos pulados porque a fila passou do limite menos 2048 bytes.");
             foreach (var p in players)
                 w.Sample("valheim_zdo_send_cycles_throttled_total", p.SendCyclesThrottled, p.Labels);
 

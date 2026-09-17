@@ -9,6 +9,7 @@
   <!-- So o nucleo sem dependencia do jogo: roda sem Unity nem BepInEx. -->
   <ItemGroup>
     <Compile Include="../src/Exposition/*.cs" />
+    <Compile Include="../src/Tuning/TuningSettings.cs" />
   </ItemGroup>
 
   <ItemGroup>

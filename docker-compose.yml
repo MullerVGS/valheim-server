@@ -61,6 +61,13 @@ services:
       # A imagem baixa o BepInExPack `latest` do Thunderstore no boot e em cada update.
       BEPINEX: ${BEPINEX:-false}
 
+      # Ajustes de rede do plugin (exigem BEPINEX=true). Vazio = o jogo como ele e.
+      # O servidor manda ZDO a um jogador por frame, ate 10240 bytes por pacote: com N
+      # jogadores, cada um recebe no maximo 10240 * FPS / (N+1) bytes/s. FPS: 30..360
+      # (o jogo fixa 30). Limite: 10240..65536.
+      VALHEIM_SERVER_FPS: ${VALHEIM_SERVER_FPS:-}
+      VALHEIM_ZDO_SEND_LIMIT_BYTES: ${VALHEIM_ZDO_SEND_LIMIT_BYTES:-}
+
     volumes:
       # config = mundos, listas, backups. E o que importa.
       - config:/config
