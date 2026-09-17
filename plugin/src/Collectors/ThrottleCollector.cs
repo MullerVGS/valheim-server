@@ -1,5 +1,7 @@
 using System;
+using System.Runtime.InteropServices;
 using HarmonyLib;
+using Steamworks;
 using UnityEngine;
 using ValheimMetrics.Exposition;
 using ValheimMetrics.Tuning;
@@ -125,6 +127,30 @@ namespace ValheimMetrics.Collectors
             _receiving = null;
         }
 
+        static bool TryReadGlobalInt(ESteamNetworkingConfigValue key, out int value)
+        {
+            value = 0;
+            var buffer = Marshal.AllocHGlobal(sizeof(int));
+            try
+            {
+                ulong size = sizeof(int);
+                var result = SteamGameServerNetworkingUtils.GetConfigValue(key,
+                    ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Global, IntPtr.Zero, out _, buffer, ref size);
+                if ((int)result <= 0)
+                    return false;
+                value = Marshal.ReadInt32(buffer);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
         public void Write(PrometheusWriter w, double now)
         {
             var players = Players.Connected;
@@ -135,6 +161,15 @@ namespace ValheimMetrics.Collectors
 
             w.Family("valheim_zdo_send_limit_bytes", "gauge", "Limite de bytes por ciclo de envio de ZDO (10240 no jogo).");
             w.Sample("valheim_zdo_send_limit_bytes", ServerTuning.SendLimitBytes);
+
+            // Lido do Steam, nao do ajuste: prova que o valor pegou. Antes do GameServer subir nao ha leitura.
+            if (TryReadGlobalInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, out var rateMin)
+                && TryReadGlobalInt(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, out var rateMax))
+            {
+                w.Family("valheim_steam_send_rate_bytes_per_second", "gauge", "Taxa de envio global do Steam por conexao (153600 no jogo; 262144 e o padrao do Steam, antes do servidor abrir).");
+                w.Sample("valheim_steam_send_rate_bytes_per_second", rateMin, "bound", "min");
+                w.Sample("valheim_steam_send_rate_bytes_per_second", rateMax, "bound", "max");
+            }
 
             w.Family("valheim_zdo_send_cycles_throttled_total", "counter", "Ciclos pulados porque a fila passou do limite menos 2048 bytes.");
             foreach (var p in players)

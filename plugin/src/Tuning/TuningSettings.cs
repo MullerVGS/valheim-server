@@ -8,6 +8,7 @@ namespace ValheimMetrics.Tuning
     {
         public const string FpsVariable = "VALHEIM_SERVER_FPS";
         public const string SendLimitVariable = "VALHEIM_ZDO_SEND_LIMIT_BYTES";
+        public const string SteamSendRateVariable = "VALHEIM_STEAM_SEND_RATE_BYTES";
 
         // PresentManager.RequestTargetFrameRate troca valor fora de 30..360 por -1, que e FPS sem teto.
         public const int MinFps = 30;
@@ -18,8 +19,14 @@ namespace ValheimMetrics.Tuning
         public const int GameSendLimitBytes = 10240;
         public const int MaxSendLimitBytes = 65536;
 
+        // SendRateMin = SendRateMax fixados pelo jogo. Acima de 1 MiB/s (~8 Mbps) por jogador a
+        // conta de banda da VPS pesa mais que qualquer ganho.
+        public const int GameSteamSendRateBytes = 153600;
+        public const int MaxSteamSendRateBytes = 1048576;
+
         public int? ServerFps { get; private set; }
         public int? ZdoSendLimitBytes { get; private set; }
+        public int? SteamSendRateBytes { get; private set; }
         public IReadOnlyList<string> Warnings => _warnings;
 
         readonly List<string> _warnings = new List<string>();
@@ -29,6 +36,7 @@ namespace ValheimMetrics.Tuning
             var s = new TuningSettings();
             s.ServerFps = s.ReadInt(env, FpsVariable, MinFps, MaxFps);
             s.ZdoSendLimitBytes = s.ReadInt(env, SendLimitVariable, GameSendLimitBytes, MaxSendLimitBytes);
+            s.SteamSendRateBytes = s.ReadInt(env, SteamSendRateVariable, GameSteamSendRateBytes, MaxSteamSendRateBytes);
             return s;
         }
 

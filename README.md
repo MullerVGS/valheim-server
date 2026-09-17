@@ -101,16 +101,20 @@ de ate **10240 bytes**, e mira **30 FPS**. Com N jogadores, cada um recebe no ma
 pacote enche e a sincronizacao atrasa (mob teleportando, item demorando pra entrar no inventario),
 com CPU sobrando. `valheim_zdo_send_cycles_total` e os bytes de saida por jogador mostram isso.
 
-O plugin mexe nas duas alavancas, so com a variavel definida no `.env`:
+O plugin mexe nas tres alavancas, so com a variavel definida no `.env`:
 
 | Variavel | Jogo | Faixa | Efeito |
 | --- | --- | --- | --- |
-| `VALHEIM_SERVER_FPS` | 30 | 30..360 | ciclo por jogador em `(N+1)/FPS` s; CPU do servidor sobe junto |
+| `VALHEIM_SERVER_FPS` | 30 | 30..360 | ciclo por jogador em `(N+1)/FPS` s (minimo de 50 ms por rodada); CPU do servidor sobe junto |
 | `VALHEIM_ZDO_SEND_LIMIT_BYTES` | 10240 | 10240..65536 | bytes por ciclo; fila acima de `limite - 2048` pula o ciclo |
+| `VALHEIM_STEAM_SEND_RATE_BYTES` | 153600 | 153600..1048576 | bytes/s por conexao no Steam (minimo e maximo, taxa fixa) |
 
-Os dois multiplicam: 60 FPS e 20480 bytes dao 4x (136 KB/s por jogador com 8). O teto do Steam
-continua 150 KiB/s por conexao, e o que passa dele espera na fila. O envio do **cliente** para o
-servidor tem os mesmos limites no jogo dele, e nao muda por aqui.
+FPS e limite multiplicam: 60 FPS e 20480 bytes dao 4x (136 KB/s por jogador com 8). Mas o
+Steam corta cada conexao na propria taxa, e o que passa dela fica na fila: **subir o limite sem
+subir a taxa do Steam so aumenta a fila e atrasa a sincronizacao**. Suba os tres juntos, olhando
+qual corta primeiro. A taxa do Steam e fixa (o jogo poe o mesmo valor em minimo e maximo), entao
+cada jogador precisa ter essa banda de download. O envio do **cliente** para o servidor tem os
+mesmos limites no jogo dele, e nao muda por aqui.
 
 Aplicar exige recriar o container (variavel nova) e, por causa do BepInEx, um restart depois:
 
@@ -119,8 +123,9 @@ docker compose up -d                      # derruba quem estiver jogando
 docker compose restart valheim            # o plugin so carrega no boot seguinte
 ```
 
-Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_limit_bytes` e
-`valheim_exporter_patch_ok{target="ZDOMan.SendZDOs#transpiler"}`. Rollback = apagar as variaveis e
+Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_limit_bytes`,
+`valheim_steam_send_rate_bytes_per_second` (lido do proprio Steam) e `valheim_exporter_patch_ok`
+dos alvos `ZDOMan.SendZDOs#transpiler` e `ZSteamSocket.RegisterGlobalCallbacks#transpiler`. Rollback = apagar as variaveis e
 repetir os dois comandos.
 
 ## Dados

@@ -63,10 +63,12 @@ services:
 
       # Ajustes de rede do plugin (exigem BEPINEX=true). Vazio = o jogo como ele e.
       # O servidor manda ZDO a um jogador por frame, ate 10240 bytes por pacote: com N
-      # jogadores, cada um recebe no maximo 10240 * FPS / (N+1) bytes/s. FPS: 30..360
-      # (o jogo fixa 30). Limite: 10240..65536.
+      # jogadores, cada um recebe no maximo 10240 * FPS / (N+1) bytes/s, e o Steam corta
+      # em 153600 bytes/s por conexao. FPS: 30..360 (o jogo fixa 30). Limite:
+      # 10240..65536. Taxa do Steam: 153600..1048576.
       VALHEIM_SERVER_FPS: ${VALHEIM_SERVER_FPS:-}
       VALHEIM_ZDO_SEND_LIMIT_BYTES: ${VALHEIM_ZDO_SEND_LIMIT_BYTES:-}
+      VALHEIM_STEAM_SEND_RATE_BYTES: ${VALHEIM_STEAM_SEND_RATE_BYTES:-}
 
     volumes:
       # config = mundos, listas, backups. E o que importa.
