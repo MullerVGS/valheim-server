@@ -60,6 +60,11 @@ services:
       # BepInEx, so para carregar o plugin de metricas (plugin/). Opt-in.
       # A imagem baixa o BepInExPack `latest` do Thunderstore no boot e em cada update.
       BEPINEX: ${BEPINEX:-false}
+      # A imagem so copia /config/bepinex/plugins se a pasta de destino ja existir, e o zip
+      # do BepInExPack nao traz BepInEx/plugins: toda reinstalacao (update do jogo, container
+      # recriado) subia sem o plugin. O hook cria a pasta antes da copia. `$$` e o `$` literal;
+      # `plugins_path` e a variavel da funcao da imagem que roda o hook.
+      PRE_BEPINEX_CONFIG_HOOK: 'mkdir -p "$$plugins_path"'
 
       # Ajustes de rede do plugin (exigem BEPINEX=true). Vazio = o jogo como ele e.
       # O servidor manda ZDO a um jogador por frame, ate 10240 bytes por pacote: com N

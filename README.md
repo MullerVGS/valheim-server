@@ -91,7 +91,10 @@ docker compose restart valheim
 
 Coleta: ponha o container na rede do seu Prometheus/vmagent e raspe `valheim:9780/metrics`
 (5s mostra a dinamica de uma raid). `valheim_exporter_patch_ok=0` = uma atualizacao do jogo mudou
-um metodo: so aquela metrica some, o jogo segue. O BepInEx atualiza sozinho (`latest`).
+um metodo: so aquela metrica some, o jogo segue. O BepInEx atualiza sozinho (`latest`) e e
+reinstalado a cada update do jogo; o `PRE_BEPINEX_CONFIG_HOOK` do compose recoloca o plugin
+nessa reinstalacao. Sem ele o servidor volta sem plugin (`0 plugins to load` no log) ate o
+proximo `docker compose restart valheim`.
 
 ### Ajustes de rede (opt-in)
 
@@ -116,17 +119,16 @@ qual corta primeiro. A taxa do Steam e fixa (o jogo poe o mesmo valor em minimo 
 cada jogador precisa ter essa banda de download. O envio do **cliente** para o servidor tem os
 mesmos limites no jogo dele, e nao muda por aqui.
 
-Aplicar exige recriar o container (variavel nova) e, por causa do BepInEx, um restart depois:
+Aplicar exige recriar o container (variavel nova):
 
 ```sh
 docker compose up -d                      # derruba quem estiver jogando
-docker compose restart valheim            # o plugin so carrega no boot seguinte
 ```
 
 Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_limit_bytes`,
 `valheim_steam_send_rate_bytes_per_second` (lido do proprio Steam) e `valheim_exporter_patch_ok`
 dos alvos `ZDOMan.SendZDOs#transpiler` e `ZSteamSocket.RegisterGlobalCallbacks#transpiler`. Rollback = apagar as variaveis e
-repetir os dois comandos.
+repetir o comando.
 
 ## Dados
 
