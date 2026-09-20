@@ -21,6 +21,8 @@ namespace ValheimMetrics.Signs
         public string Label;
         // Lado do icone pedido com <size=N>, como fica anotado; null = o do catalogo.
         public string Size;
+        // Brilho pedido com N% no codigo, como fica anotado; null = o do catalogo.
+        public string Brightness;
         public string Text;
         public bool UsedDefault;
     }
@@ -31,10 +33,10 @@ namespace ValheimMetrics.Signs
         // Todo texto gerado comeca assim; em 50 caracteres so cabe o cabecalho, nunca uma linha de pixels.
         const string GeneratedPrefix = "<cspace=-";
 
-        public static SignIconDecision Decide(SignIconCatalog catalog, string text, string storedIcon, string storedLabel = null, string storedSize = null)
+        public static SignIconDecision Decide(SignIconCatalog catalog, string text, string storedIcon, string storedLabel = null, string storedSize = null, string storedBrightness = null)
         {
             text = text ?? "";
-            if (SignCode.TryParse(text, out var key, out var label, out var size))
+            if (SignCode.TryParse(text, out var key, out var label, out var size, out var brightness))
             {
                 var icon = catalog.Resolve(key);
                 if (icon == null)
@@ -45,7 +47,8 @@ namespace ValheimMetrics.Signs
                     Icon = icon,
                     Label = label.Encode(),
                     Size = size?.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
-                    Text = catalog.Compose(icon, label, size),
+                    Brightness = brightness?.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    Text = catalog.Compose(icon, label, size, brightness),
                     UsedDefault = !catalog.Knows(key),
                 };
             }
@@ -55,14 +58,14 @@ namespace ValheimMetrics.Signs
 
             // Placa desenhada antes de existir rotulo: o id do icone serve de nome escondido.
             var stored = SignLabel.Decode(storedLabel) ?? new SignLabel { Text = storedIcon, Shown = false };
-            double? side = double.TryParse(storedSize, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : (double?)null;
-            var expected = catalog.Compose(storedIcon, stored, side);
+            double? side = Number(storedSize);
+            double? light = Number(storedBrightness);
+            var expected = catalog.Compose(storedIcon, stored, side, light);
             if (expected == null)
                 return new SignIconDecision { Action = SignIconAction.Release };
             if (text == expected)
                 return default;
-            var redraw = new SignIconDecision { Icon = storedIcon, Label = stored.Encode(), Size = side.HasValue ? storedSize : null, Text = expected };
+            var redraw = new SignIconDecision { Icon = storedIcon, Label = stored.Encode(), Size = side.HasValue ? storedSize : null, Brightness = light.HasValue ? storedBrightness : null, Text = expected };
             if (text.Length > SignCode.GameInputLimit)
                 redraw.Action = SignIconAction.Refresh;
             else if (SignCode.IsTruncationOf(text, expected) || text.StartsWith(GeneratedPrefix, System.StringComparison.Ordinal))
@@ -70,6 +73,12 @@ namespace ValheimMetrics.Signs
             else
                 return new SignIconDecision { Action = SignIconAction.Release };
             return redraw;
+        }
+
+        static double? Number(string stored)
+        {
+            return double.TryParse(stored, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : (double?)null;
         }
     }
 }

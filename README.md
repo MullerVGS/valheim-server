@@ -146,6 +146,9 @@ texto (um bloco colorido por pixel). Quem ve e o jogo sem mod nenhum.
 - quem mira a placa le o rotulo no hover; sem rotulo, le o que foi digitado dentro do codigo;
 - o rotulo aceita cor, negrito e abreviacao (`{u}<#fc6>Madeira :wood:`); tag que muda o tamanho da
   linha e descartada, porque o desenho depende de tudo caber na tabua;
+- uma porcentagem no fim do codigo e o brilho daquele icone, sobre o padrao do catalogo:
+  `:wood 50%:` apaga pela metade, `:wood 140%:` chega na cor cheia (que estoura em bloom a noite).
+  O brilho da letra e a cor dela: `<#fff>Madeira :wood:`;
 - `<size=N>` colado no codigo e o lado do icone em unidades da tabua (ela tem 18,3 x 8,55; o
   padrao e 7,6): `<size=4>:wood:` encolhe, `<size=15>:wood:` vaza da tabua, ate 18, que e a
   largura que ainda nao quebra linha. Vale junto com rotulo: `Madeira <size=12>:wood:`;
@@ -190,8 +193,9 @@ docker compose up -d                      # derruba quem estiver jogando
 
 `--px` escolhe 16, 24 (padrao) ou 32 pixels de lado: mais pixels, mais texto por placa (em 24,
 mediana de ~1,6 mil caracteres e maximo de ~3 mil). O material da placa e iluminado pela cena e o
-icone some no escuro; por padrao o gerador usa o material sem iluminacao do jogo com as cores a
-70% (`--brightness`; cor cheia estoura em bloom a noite). `--material ""  --brightness 1` volta ao
+icone some no escuro; por padrao o gerador usa o material sem iluminacao do jogo e o plugin mostra
+as cores a 70% (`--brightness`, que vai no catalogo como `P brightness`; cor cheia estoura em bloom
+a noite). `--material ""  --brightness 1` volta ao
 material da placa. `--overlap` e quanto cada bloco invade o vizinho para fechar a costura entre os
 pixels. O rotulo sai no preset `Valheim-Norse - Outline` do jogo, tambem sem iluminacao: letra clara
 com contorno preto, que le de dia e de noite (`--label-material`, `--label-color`; material vazio =

@@ -53,19 +53,28 @@ namespace ValheimMetrics.Signs
         static readonly Regex SizeAtEnd = new Regex(@"<size=([0-9]+(?:\.[0-9]+)?)>\s*$", RegexOptions.CultureInvariant);
         static readonly Regex SizeAtStart = new Regex(@"^\s*<size=([0-9]+(?:\.[0-9]+)?)>", RegexOptions.CultureInvariant);
 
+        static readonly Regex PercentAtEnd = new Regex(@"^(?<name>.*?)\s*(?<pct>[0-9]{1,4})\s*%$", RegexOptions.CultureInvariant);
+
         public static bool TryParse(string text, out string key, out SignLabel label)
         {
-            return TryParse(text, out key, out label, out _);
+            return TryParse(text, out key, out label, out _, out _);
+        }
+
+        public static bool TryParse(string text, out string key, out SignLabel label, out double? size)
+        {
+            return TryParse(text, out key, out label, out size, out _);
         }
 
         // ":wood:" sozinho, "Madeira :wood:" ou ":wood: Madeira". Sozinho, o rotulo e o que foi
         // digitado dentro do codigo, escondido. Um <size=N> colado antes do codigo e o lado do icone,
-        // em unidades da tabua ("<size=12>:wood:", "Madeira <size=12>:wood:").
-        public static bool TryParse(string text, out string key, out SignLabel label, out double? size)
+        // em unidades da tabua ("<size=12>:wood:", "Madeira <size=12>:wood:"). Uma porcentagem no fim
+        // do codigo e o brilho do icone, sobre o padrao do catalogo (":wood 50%:").
+        public static bool TryParse(string text, out string key, out SignLabel label, out double? size, out double? brightness)
         {
             key = null;
             label = default;
             size = null;
+            brightness = null;
             if (text == null)
                 return false;
             var trimmed = text.Trim();
@@ -100,6 +109,12 @@ namespace ValheimMetrics.Signs
 
             if (inner.IndexOfAny(new[] { '<', '>' }) >= 0)
                 return false;
+            var percent = PercentAtEnd.Match(inner.Trim());
+            if (percent.Success && Normalize(percent.Groups["name"].Value).Length > 0)
+            {
+                inner = percent.Groups["name"].Value;
+                brightness = double.Parse(percent.Groups["pct"].Value, CultureInfo.InvariantCulture);
+            }
             key = Normalize(inner);
             if (key.Length == 0)
                 return false;

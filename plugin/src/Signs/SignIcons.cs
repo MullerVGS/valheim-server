@@ -30,6 +30,7 @@ namespace ValheimMetrics.Signs
         static readonly int IconKey = "valheim-server.sign_icon".GetStableHashCode();
         static readonly int LabelKey = "valheim-server.sign_label".GetStableHashCode();
         static readonly int SizeKey = "valheim-server.sign_size".GetStableHashCode();
+        static readonly int BrightnessKey = "valheim-server.sign_brightness".GetStableHashCode();
         // O que o jogador escreveu (com abreviacao, ja emendado), quando o texto da placa e a expansao.
         static readonly int SourceKey = "valheim-server.sign_source".GetStableHashCode();
 
@@ -236,13 +237,14 @@ namespace ValheimMetrics.Signs
                     zdo.RemoveString(IconKey);
                     zdo.RemoveString(LabelKey);
                     zdo.RemoveString(SizeKey);
+                    zdo.RemoveString(BrightnessKey);
                 }
                 hasIcon = false;
                 result = "text_" + written.Action.ToString().ToLowerInvariant();
             }
             else if (!hadSource || asksIcon)
             {
-                var decision = SignIconRules.Decide(_catalog, text, storedIcon, zdo.GetString(LabelKey), zdo.GetString(SizeKey));
+                var decision = SignIconRules.Decide(_catalog, text, storedIcon, zdo.GetString(LabelKey), zdo.GetString(SizeKey), zdo.GetString(BrightnessKey));
                 switch (decision.Action)
                 {
                     case SignIconAction.None:
@@ -251,6 +253,7 @@ namespace ValheimMetrics.Signs
                         zdo.RemoveString(IconKey);
                         zdo.RemoveString(LabelKey);
                         zdo.RemoveString(SizeKey);
+                        zdo.RemoveString(BrightnessKey);
                         hasIcon = false;
                         break;
                     default:
@@ -260,6 +263,10 @@ namespace ValheimMetrics.Signs
                             zdo.Set(SizeKey, decision.Size);
                         else
                             zdo.RemoveString(SizeKey);
+                        if (decision.Brightness != null)
+                            zdo.Set(BrightnessKey, decision.Brightness);
+                        else
+                            zdo.RemoveString(BrightnessKey);
                         zdo.Set(ZDOVars.s_text, decision.Text);
                         text = decision.Text;
                         hasIcon = true;

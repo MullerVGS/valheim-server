@@ -162,6 +162,91 @@ public class SignLabelTests
     }
 
     [Theory]
+    [InlineData(":wood 50%:", "wood", 50.0, "wood")]
+    [InlineData(":Yellow Mushroom  130 %:", "yellowmushroom", 130.0, "Yellow Mushroom")]
+    [InlineData("Madeira <size=12>:wood 80%:", "wood", 80.0, "Madeira")]
+    public void Porcentagem_no_fim_do_codigo_e_o_brilho_do_icone(string text, string key, double percent, string label)
+    {
+        Assert.True(SignCode.TryParse(text, out var parsedKey, out var parsedLabel, out _, out var brightness));
+        Assert.Equal(key, parsedKey);
+        Assert.Equal(percent, brightness.Value, 3);
+        Assert.Equal(label, parsedLabel.Text);
+    }
+
+    [Fact]
+    public void Sem_porcentagem_o_brilho_e_o_do_catalogo()
+    {
+        Assert.True(SignCode.TryParse(":wood:", out _, out _, out _, out var brightness));
+        Assert.Null(brightness);
+        Assert.True(SignCode.TryParse(":50%:", out var key, out _, out _, out brightness));
+        Assert.Equal("50", key);
+        Assert.Null(brightness);
+    }
+
+    static SignIconCatalog FullColor(string brightness) =>
+        SignIconCatalog.Parse(new[]
+        {
+            "P\tbrightness\t" + brightness,
+            "I\twood\t<cspace=-0.0><size=1><line-height=0><#0000>{label}\\n<cspace=-0.288><line-height=0.32><size=0.368><#fa5>██<#0000>█<#84c8>█<#ffaa55>█" + Reset,
+            "T\twood\t<cspace=-0.0><#bba><size={ls}><line-height=1>{label}\\n<cspace=-0.276><line-height=0.24><size=0.276><#fa5>██" + Reset,
+        }, new List<string>());
+
+    [Fact]
+    public void Catalogo_em_cor_cheia_sai_no_brilho_padrao_dele()
+    {
+        var text = FullColor("0.6").Compose("wood", new SignLabel { Text = "wood" });
+
+        // f=15 a=10 5=5 vezes 0,6 = 9 6 3; transparente intacto; alfa e 6 digitos preservados
+        Assert.Contains("<#963>██<#0000>█<#5278>█<#996633>█", text);
+    }
+
+    [Fact]
+    public void Porcentagem_e_sobre_o_brilho_padrao_e_nao_passa_da_cor_cheia()
+    {
+        var catalog = FullColor("0.6");
+        var label = new SignLabel { Text = "wood" };
+
+        Assert.Contains("<#532>██", catalog.Compose("wood", label, null, 50));
+        Assert.Contains("<#fa5>██", catalog.Compose("wood", label, null, 1000));
+    }
+
+    [Fact]
+    public void Brilho_nao_mexe_na_cor_do_rotulo()
+    {
+        var text = FullColor("0.6").Compose("wood", new SignLabel { Text = "Madeira", Shown = true }, null, 50);
+
+        Assert.StartsWith("<cspace=-0.0><#bba><size=2><line-height=1>Madeira\n", text);
+        Assert.Contains("<#532>██", text);
+    }
+
+    [Fact]
+    public void Catalogo_antigo_ja_escurecido_so_aplica_a_porcentagem()
+    {
+        var catalog = Catalog();
+        var label = new SignLabel { Text = "wood" };
+
+        Assert.Contains("<#a63>███", catalog.Compose("wood", label));
+        Assert.Contains("<#532>███", catalog.Compose("wood", label, null, 50));
+    }
+
+    [Fact]
+    public void Brilho_pedido_fica_anotado_e_volta_no_redesenho()
+    {
+        var catalog = FullColor("0.6");
+
+        var d = SignIconRules.Decide(catalog, ":wood 50%:", "", null, null, null);
+        Assert.Equal(SignIconAction.Apply, d.Action);
+        Assert.Equal("50", d.Brightness);
+        Assert.Equal("~wood", d.Label);
+
+        Assert.Equal(SignIconAction.None, SignIconRules.Decide(catalog, d.Text, d.Icon, d.Label, d.Size, d.Brightness).Action);
+        var cut = SignIconRules.Decide(catalog, d.Text.Substring(0, SignCode.GameInputLimit), d.Icon, d.Label, d.Size, d.Brightness);
+        Assert.Equal(SignIconAction.Restore, cut.Action);
+        Assert.Equal(d.Text, cut.Text);
+        Assert.Equal("50", cut.Brightness);
+    }
+
+    [Theory]
     [InlineData("Madeira")]
     [InlineData("Madeira :wood: e pedra")]
     [InlineData("Madeira\n:wood:")]

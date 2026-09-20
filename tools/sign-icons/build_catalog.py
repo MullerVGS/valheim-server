@@ -308,7 +308,7 @@ def main():
     parser.add_argument("--material", default=UNLIT_MATERIAL,
                         help="preset de material do jogo para os blocos; o padrao e sem iluminacao (icone visivel no escuro). Vazio = material da placa, iluminado pela cena")
     parser.add_argument("--brightness", type=float, default=0.7,
-                        help="fator de brilho das cores (sem iluminacao, 1 estoura em bloom a noite; com --material vazio use 1)")
+                        help="brilho padrao dos icones, aplicado pelo plugin (sem iluminacao, 1 estoura em bloom a noite; com --material vazio use 1)")
     parser.add_argument("--label-material", default=LABEL_MATERIAL,
                         help="preset de material do rotulo ('Madeira :wood:'); o padrao e sem iluminacao e com contorno. Vazio = texto normal da placa, que some no escuro")
     parser.add_argument("--label-color", default="bba", help="cor do rotulo em hex, quando ha --label-material")
@@ -327,7 +327,9 @@ def main():
     label_style = f'<material="{args.label_material}"><#{args.label_color}>' if args.label_material else ""
 
     def render(icon_id, image):
-        small = quantize(shrink(image, args.px), args.colors, args.brightness)
+        # cores cheias no catalogo: quem escurece e o plugin (P brightness), que assim tambem atende
+        # o brilho pedido por placa (":wood 50%:") sem perder cor
+        small = quantize(shrink(image, args.px), args.colors)
         texts[icon_id] = to_rich_text(small, args.units, args.material, args.overlap)
         titled[icon_id] = to_rich_text(small, args.units, args.material, args.overlap, titled=True, label_style=label_style)
         if args.preview:
@@ -370,6 +372,7 @@ def main():
         # o plugin refaz o cabecalho quando o jogador pede outro tamanho (<size=N>:wood:): precisa do
         # lado padrao e do extra do Bold nos dois regimes do auto-size (cabe na tabua / nao cabe)
         handle.write(f"P\tunits\t{args.units:g}\nP\tbold_fit\t{BOLD_ADVANCE:g}\nP\tbold_overflow\t0.03\n")
+        handle.write(f"P\tbrightness\t{args.brightness:g}\n")
         # {u} numa placa escrita a mao: o mesmo material sem iluminacao, em 3 caracteres em vez de 38.
         handle.write("M\tu\t<material=" + UNLIT_MATERIAL + ">\n")
         for icon_id, text in sorted(texts.items()):

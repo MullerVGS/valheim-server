@@ -12,7 +12,7 @@ namespace ValheimMetrics.Signs
     //   A <apelido> <id>
     //   D <id do icone padrao>
     //   M <abreviacao> <rich text que entra no lugar de {abreviacao}>
-    //   P <parametro> <numero>   (units, bold_fit, bold_overflow; ver Resize)
+    //   P <parametro> <numero>   (units, bold_fit, bold_overflow: ver Resize; brightness: ver Dim)
     public sealed class SignIconCatalog
     {
         readonly Dictionary<string, string> _texts = new Dictionary<string, string>();
@@ -120,9 +120,11 @@ namespace ValheimMetrics.Signs
         static readonly Regex Blocks = new Regex(@"^(?:█|\n|<#[0-9a-fA-F]{3,8}>)*$", RegexOptions.CultureInvariant);
         const string HoverReset = "<size=100.0%><cspace=0.0><line-height=100.0%>";
 
+        static readonly Regex ColorTag = new Regex(@"<#(?<hex>[0-9a-fA-F]{3,8})>", RegexOptions.CultureInvariant);
+
         // O texto que vai para a placa: o desenho do icone com o rotulo no lugar. size = lado do
-        // icone em unidades da tabua; null = o do catalogo.
-        public string Compose(string icon, SignLabel label, double? size = null)
+        // icone em unidades da tabua; brightness = porcentagem do brilho padrao; null = o do catalogo.
+        public string Compose(string icon, SignLabel label, double? size = null, double? brightness = null)
         {
             var plain = TextOf(icon);
             if (plain == null)
@@ -134,6 +136,7 @@ namespace ValheimMetrics.Signs
                 : plain;
             if (size.HasValue)
                 template = Resize(template, plain, size.Value);
+            template = Dim(template, brightness);
             return template
                 .Replace("{ls}", visible <= LargeLabelLength ? "2" : "1")
                 .Replace("{label}", text);
@@ -163,6 +166,43 @@ namespace ValheimMetrics.Signs
             var resized = "<cspace=-" + Format(bold + overlap * pixel) + ">" + header.Groups["m"].Value
                 + "<line-height=" + Format(pixel) + "><size=" + Format(pixel * (1 + overlap)) + ">";
             return template.Substring(0, header.Index) + resized + template.Substring(header.Index + header.Length);
+        }
+
+        // O desenho e sem iluminacao: a cor escrita e o brilho que se ve. Catalogo com `P brightness`
+        // traz as cores cheias e o brilho padrao a aplicar; sem ele (catalogo antigo) as cores ja vem
+        // escurecidas. A porcentagem do jogador e sobre o padrao, e nada passa da cor cheia. So o
+        // desenho muda: a cor do rotulo e de quem escreveu.
+        string Dim(string template, double? percent)
+        {
+            double standard = Parameter("brightness", 1);
+            double factor = System.Math.Min(1, standard * System.Math.Max(5, percent ?? 100) / 100);
+            if (System.Math.Abs(factor - 1) < 1e-9)
+                return template;
+            int label = template.IndexOf("{label}", System.StringComparison.Ordinal);
+            int start = label < 0 ? 0 : template.IndexOf('\n', label) + 1;
+            return template.Substring(0, start) + ColorTag.Replace(template.Substring(start), m => Scale(m, factor));
+        }
+
+        static string Scale(Match tag, double factor)
+        {
+            var hex = tag.Groups["hex"].Value;
+            if (hex.Length != 3 && hex.Length != 4 && hex.Length != 6 && hex.Length != 8)
+                return tag.Value;
+            int width = hex.Length <= 4 ? 1 : 2;
+            int full = width == 1 ? 15 : 255;
+            var sb = new StringBuilder("<#", hex.Length + 3);
+            for (int channel = 0; channel * width < hex.Length; channel++)
+            {
+                var digits = hex.Substring(channel * width, width);
+                if (channel < 3)
+                {
+                    int value = int.Parse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                    int scaled = (int)System.Math.Round(value * factor, System.MidpointRounding.AwayFromZero);
+                    digits = System.Math.Min(full, scaled).ToString(width == 1 ? "x1" : "x2", CultureInfo.InvariantCulture);
+                }
+                sb.Append(digits);
+            }
+            return sb.Append('>').ToString();
         }
 
         double Parameter(string name, double fallback)
