@@ -130,6 +130,41 @@ Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_li
 dos alvos `ZDOMan.SendZDOs#transpiler` e `ZSteamSocket.RegisterGlobalCallbacks#transpiler`. Rollback = apagar as variaveis e
 repetir o comando.
 
+### Icones nas placas (opt-in)
+
+A placa do jogo e um TextMeshPro com rich text, e o limite de 50 caracteres e so do campo de
+digitacao do cliente: o texto gravado no mundo pode ter qualquer tamanho. Com o catalogo ligado,
+quem escreve `:mel:` numa placa recebe de volta o icone do item, desenhado como pixel art de
+texto (um bloco colorido por pixel). Quem ve e o jogo sem mod nenhum.
+
+- vale o prefab do item (`:MushroomYellow:`) e o nome no jogo em ingles ou portugues
+  (`:yellow mushroom:`, `:cogumelo amarelo:`); maiuscula, acento, espaco e `_` nao importam;
+- codigo desconhecido vira o icone padrao, uma folha (`:weed:`);
+- escrever qualquer outra coisa por cima devolve a placa ao jogador. Quem aperta E numa placa de
+  icone ve o comeco do texto gerado; confirmar sem mexer nao estraga, o servidor redesenha;
+- so o prefab `sign` e tocado, e so placa cujo texto inteiro e um codigo.
+
+O catalogo sai dos arquivos do **seu** jogo e carrega arte dele: nao entra no repositorio.
+
+```sh
+# 1. gerar, em qualquer maquina com o jogo instalado (~1 min, ~2,5 MB)
+pip install -r tools/sign-icons/requirements.txt
+python tools/sign-icons/build_catalog.py --game "<Steam>/steamapps/common/Valheim/valheim_Data" --out catalog.txt
+# 2. por no volume de config
+docker compose exec valheim mkdir -p /config/sign-icons
+docker compose cp catalog.txt valheim:/config/sign-icons/catalog.txt
+# 3. VALHEIM_SIGN_ICONS_CATALOG=/config/sign-icons/catalog.txt no .env, compilar o plugin e recriar
+docker compose --profile plugin run --rm plugin-build
+docker compose up -d                      # derruba quem estiver jogando
+```
+
+`--px` escolhe 16, 24 (padrao) ou 32 pixels de lado: mais pixels, mais texto por placa (em 24,
+mediana de ~1,6 mil caracteres e maximo de ~3 mil). Trocar o catalogo redesenha as placas
+existentes no boot seguinte.
+Conferir em `/metrics`: `valheim_sign_icons_catalog_entries`, `valheim_sign_icons_signs`,
+`valheim_sign_icons_changes_total` e `valheim_exporter_patch_ok{target="ZDO.Deserialize"}`.
+Rollback = apagar a variavel e recriar; as placas ja desenhadas ficam como estao.
+
 ## Dados
 
 Mundo e config em volumes nomeados (`valheim-server_config`, `valheim-server_server`), nunca no repo.

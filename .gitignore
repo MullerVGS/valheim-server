@@ -13,3 +13,5 @@ worlds_local/
 .scratch/
 plugin/**/bin/
 plugin/**/obj/
+catalog*.txt
+__pycache__/

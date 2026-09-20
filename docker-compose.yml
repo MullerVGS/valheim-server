@@ -75,6 +75,10 @@ services:
       VALHEIM_ZDO_SEND_LIMIT_BYTES: ${VALHEIM_ZDO_SEND_LIMIT_BYTES:-}
       VALHEIM_STEAM_SEND_RATE_BYTES: ${VALHEIM_STEAM_SEND_RATE_BYTES:-}
 
+      # Icones nas placas (exige BEPINEX=true). Caminho, dentro do container, do catalogo gerado
+      # por tools/sign-icons. Vazio = placa como o jogo faz. Ver README.
+      VALHEIM_SIGN_ICONS_CATALOG: ${VALHEIM_SIGN_ICONS_CATALOG:-}
+
     volumes:
       # config = mundos, listas, backups. E o que importa.
       - config:/config

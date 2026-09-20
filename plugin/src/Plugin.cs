@@ -6,6 +6,7 @@ using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Collectors;
 using ValheimMetrics.Exposition;
+using ValheimMetrics.Signs;
 using ValheimMetrics.Tuning;
 
 namespace ValheimMetrics
@@ -14,7 +15,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -46,6 +47,7 @@ namespace ValheimMetrics
                 new EventCollector(),
                 new ServerCollector(),
                 new RpcCollector(),
+                new SignIcons(),
             };
             _installed = new bool[_collectors.Length];
             _collectSeconds = new double[_collectors.Length];
@@ -90,6 +92,7 @@ namespace ValheimMetrics
             double now = Time.realtimeSinceStartupAsDouble;
             ServerCollector.OnFrame(now, Time.unscaledDeltaTime);
             ServerTuning.OnFrame();
+            SignIcons.OnFrame(now);
             if (now < _nextSnapshot)
                 return;
             _nextSnapshot = now + 1;

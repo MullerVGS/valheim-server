@@ -10,6 +10,9 @@
   <ItemGroup>
     <Compile Include="../src/Exposition/*.cs" />
     <Compile Include="../src/Tuning/TuningSettings.cs" />
+    <Compile Include="../src/Signs/SignCode.cs" />
+    <Compile Include="../src/Signs/SignIconCatalog.cs" />
+    <Compile Include="../src/Signs/SignIconRules.cs" />
   </ItemGroup>
 
   <ItemGroup>
