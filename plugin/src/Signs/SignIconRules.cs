@@ -19,6 +19,8 @@ namespace ValheimMetrics.Signs
         public string Icon;
         // Rotulo como fica anotado na placa (SignLabel.Encode).
         public string Label;
+        // Lado do icone pedido com <size=N>, como fica anotado; null = o do catalogo.
+        public string Size;
         public string Text;
         public bool UsedDefault;
     }
@@ -29,10 +31,10 @@ namespace ValheimMetrics.Signs
         // Todo texto gerado comeca assim; em 50 caracteres so cabe o cabecalho, nunca uma linha de pixels.
         const string GeneratedPrefix = "<cspace=-";
 
-        public static SignIconDecision Decide(SignIconCatalog catalog, string text, string storedIcon, string storedLabel = null)
+        public static SignIconDecision Decide(SignIconCatalog catalog, string text, string storedIcon, string storedLabel = null, string storedSize = null)
         {
             text = text ?? "";
-            if (SignCode.TryParse(text, out var key, out var label))
+            if (SignCode.TryParse(text, out var key, out var label, out var size))
             {
                 var icon = catalog.Resolve(key);
                 if (icon == null)
@@ -42,7 +44,8 @@ namespace ValheimMetrics.Signs
                     Action = SignIconAction.Apply,
                     Icon = icon,
                     Label = label.Encode(),
-                    Text = catalog.Compose(icon, label),
+                    Size = size?.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    Text = catalog.Compose(icon, label, size),
                     UsedDefault = !catalog.Knows(key),
                 };
             }
@@ -52,12 +55,14 @@ namespace ValheimMetrics.Signs
 
             // Placa desenhada antes de existir rotulo: o id do icone serve de nome escondido.
             var stored = SignLabel.Decode(storedLabel) ?? new SignLabel { Text = storedIcon, Shown = false };
-            var expected = catalog.Compose(storedIcon, stored);
+            double? side = double.TryParse(storedSize, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : (double?)null;
+            var expected = catalog.Compose(storedIcon, stored, side);
             if (expected == null)
                 return new SignIconDecision { Action = SignIconAction.Release };
             if (text == expected)
                 return default;
-            var redraw = new SignIconDecision { Icon = storedIcon, Label = stored.Encode(), Text = expected };
+            var redraw = new SignIconDecision { Icon = storedIcon, Label = stored.Encode(), Size = side.HasValue ? storedSize : null, Text = expected };
             if (text.Length > SignCode.GameInputLimit)
                 redraw.Action = SignIconAction.Refresh;
             else if (SignCode.IsTruncationOf(text, expected) || text.StartsWith(GeneratedPrefix, System.StringComparison.Ordinal))

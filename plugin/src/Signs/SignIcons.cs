@@ -29,6 +29,7 @@ namespace ValheimMetrics.Signs
         // cortado, e redesenhar quando o catalogo muda. Cliente sem mod ignora a chave.
         static readonly int IconKey = "valheim-server.sign_icon".GetStableHashCode();
         static readonly int LabelKey = "valheim-server.sign_label".GetStableHashCode();
+        static readonly int SizeKey = "valheim-server.sign_size".GetStableHashCode();
         // O que o jogador escreveu (com abreviacao, ja emendado), quando o texto da placa e a expansao.
         static readonly int SourceKey = "valheim-server.sign_source".GetStableHashCode();
 
@@ -234,13 +235,14 @@ namespace ValheimMetrics.Signs
                 {
                     zdo.RemoveString(IconKey);
                     zdo.RemoveString(LabelKey);
+                    zdo.RemoveString(SizeKey);
                 }
                 hasIcon = false;
                 result = "text_" + written.Action.ToString().ToLowerInvariant();
             }
             else if (!hadSource || asksIcon)
             {
-                var decision = SignIconRules.Decide(_catalog, text, storedIcon, zdo.GetString(LabelKey));
+                var decision = SignIconRules.Decide(_catalog, text, storedIcon, zdo.GetString(LabelKey), zdo.GetString(SizeKey));
                 switch (decision.Action)
                 {
                     case SignIconAction.None:
@@ -248,11 +250,16 @@ namespace ValheimMetrics.Signs
                     case SignIconAction.Release:
                         zdo.RemoveString(IconKey);
                         zdo.RemoveString(LabelKey);
+                        zdo.RemoveString(SizeKey);
                         hasIcon = false;
                         break;
                     default:
                         zdo.Set(IconKey, decision.Icon);
                         zdo.Set(LabelKey, decision.Label);
+                        if (decision.Size != null)
+                            zdo.Set(SizeKey, decision.Size);
+                        else
+                            zdo.RemoveString(SizeKey);
                         zdo.Set(ZDOVars.s_text, decision.Text);
                         text = decision.Text;
                         hasIcon = true;

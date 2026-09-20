@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ValheimMetrics.Signs
 {
@@ -10,12 +12,15 @@ namespace ValheimMetrics.Signs
     //   A <apelido> <id>
     //   D <id do icone padrao>
     //   M <abreviacao> <rich text que entra no lugar de {abreviacao}>
+    //   P <parametro> <numero>   (units, bold_fit, bold_overflow; ver Resize)
     public sealed class SignIconCatalog
     {
         readonly Dictionary<string, string> _texts = new Dictionary<string, string>();
         readonly Dictionary<string, string> _titled = new Dictionary<string, string>();
         readonly Dictionary<string, string> _aliases = new Dictionary<string, string>();
         readonly Dictionary<string, string> _macros = new Dictionary<string, string>();
+
+        readonly Dictionary<string, double> _parameters = new Dictionary<string, double>();
 
         public int Icons => _texts.Count;
         public int Aliases => _aliases.Count;
@@ -42,6 +47,9 @@ namespace ValheimMetrics.Signs
                     aliases.Add(new KeyValuePair<string, string>(fields[1], fields[2]));
                 else if (fields[0] == "D" && fields.Length == 2)
                     defaultIcon = fields[1];
+                else if (fields[0] == "P" && fields.Length == 3
+                    && double.TryParse(fields[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var parameter))
+                    catalog._parameters[fields[1]] = parameter;
                 else if (fields[0] == "M" && fields.Length == 3)
                 {
                     var name = fields[1].ToLowerInvariant();
@@ -92,21 +100,85 @@ namespace ValheimMetrics.Signs
             return icon != null && _texts.TryGetValue(icon, out var text) ? text : null;
         }
 
-        // Rotulo curto cabe no tamanho grande; ate LongestShownLabel, no pequeno. Sao inteiros de
-        // proposito: o hover do jogo so tira tag sem ponto, e o rotulo tem que sair legivel la.
+        // Rotulo curto cabe no tamanho grande; ate LongestShownLabel, no pequeno; maior que isso fica
+        // so no hover. Os tamanhos sao inteiros de proposito: o hover do jogo so tira tag sem ponto, e
+        // o rotulo tem que sair legivel la.
         const int LargeLabelLength = 10;
+        const int LongestShownLabel = 22;
 
-        // O texto que vai para a placa: o desenho do icone com o rotulo no lugar.
-        public string Compose(string icon, SignLabel label)
+        // Maior lado de icone que nao quebra linha: a fileira mais larga tem que caber na area de
+        // texto da placa (18,29 unidades).
+        const double LargestSize = 18;
+
+        static readonly Regex Tag = new Regex(@"<[^<>]*>", RegexOptions.CultureInvariant);
+        // No rotulo so passa tag que nao mexe na altura nem na largura da linha: o desenho depende
+        // de tudo caber na tabua (ver Resize).
+        static readonly Regex LabelTag = new Regex(@"^</?(?:#|b>|i>|u>|s>|color\b|alpha\b|material\b|mark\b)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        static readonly Regex Header = new Regex(
+            @"<cspace=-(?<a>[0-9.]+)>(?<m><material=[^<>]*>)?<line-height=(?<p>[0-9.]+)><size=(?<s>[0-9.]+)>",
+            RegexOptions.CultureInvariant);
+        static readonly Regex Blocks = new Regex(@"^(?:█|\n|<#[0-9a-fA-F]{3,8}>)*$", RegexOptions.CultureInvariant);
+        const string HoverReset = "<size=100.0%><cspace=0.0><line-height=100.0%>";
+
+        // O texto que vai para a placa: o desenho do icone com o rotulo no lugar. size = lado do
+        // icone em unidades da tabua; null = o do catalogo.
+        public string Compose(string icon, SignLabel label, double? size = null)
         {
             var plain = TextOf(icon);
             if (plain == null)
                 return null;
-            var template = label.Shown && _titled.TryGetValue(icon, out var titled) ? titled : plain;
-            var text = label.Text ?? "";
+            var text = Tag.Replace(Expand(label.Text ?? ""), m => LabelTag.IsMatch(m.Value) ? m.Value : "");
+            int visible = Tag.Replace(text, "").Length;
+            var template = label.Shown && visible <= LongestShownLabel && _titled.TryGetValue(icon, out var titled)
+                ? titled
+                : plain;
+            if (size.HasValue)
+                template = Resize(template, plain, size.Value);
             return template
-                .Replace("{ls}", text.Length <= LargeLabelLength ? "2" : "1")
+                .Replace("{ls}", visible <= LargeLabelLength ? "2" : "1")
                 .Replace("{label}", text);
+        }
+
+        // O catalogo traz o desenho num tamanho so; outro tamanho e o mesmo desenho com os tres
+        // numeros do cabecalho refeitos. O extra do Bold por caractere depende do auto-size da placa:
+        // 0,24 quando tudo cabe na tabua (fecha em 8), 0,03 quando nao cabe (cai para 1).
+        string Resize(string template, string plain, double size)
+        {
+            var reference = Header.Match(plain);
+            var header = Header.Match(template);
+            if (!reference.Success || !header.Success)
+                return template;
+            var drawing = template.Substring(header.Index + header.Length);
+            if (drawing.EndsWith(HoverReset, System.StringComparison.Ordinal))
+                drawing = drawing.Substring(0, drawing.Length - HoverReset.Length);
+            if (!Blocks.IsMatch(drawing))
+                return template;
+
+            double units = Parameter("units", 7.6);
+            size = System.Math.Max(1, System.Math.Min(LargestSize, size));
+            double pixel = Number(reference.Groups["p"]) * size / units;
+            double fitting = Number(header.Groups["p"]);
+            double overlap = Number(header.Groups["s"]) / fitting - 1;
+            double bold = pixel <= fitting + 1e-6 ? Parameter("bold_fit", 0.24) : Parameter("bold_overflow", 0.03);
+            var resized = "<cspace=-" + Format(bold + overlap * pixel) + ">" + header.Groups["m"].Value
+                + "<line-height=" + Format(pixel) + "><size=" + Format(pixel * (1 + overlap)) + ">";
+            return template.Substring(0, header.Index) + resized + template.Substring(header.Index + header.Length);
+        }
+
+        double Parameter(string name, double fallback)
+        {
+            return _parameters.TryGetValue(name, out var value) ? value : fallback;
+        }
+
+        static double Number(Group group)
+        {
+            return double.Parse(group.Value, CultureInfo.InvariantCulture);
+        }
+
+        // Sempre com ponto: e o que faz a tag sobreviver no hover do jogo.
+        static string Format(double value)
+        {
+            return value.ToString("0.0##", CultureInfo.InvariantCulture);
         }
 
         public bool HasMacro(string text)

@@ -36,6 +36,9 @@ LINE_OVERHEAD = 0.45
 # fallback, herda o material corrente. Este e sem iluminacao: a cor sai como escrita, de dia ou de
 # noite, e quem dosa o brilho e a propria cor (cheia estoura em bloom; ~0,6 a 0,7 le bem no escuro).
 UNLIT_MATERIAL = "Valheim_Fonts/Valheim-Norse"
+# O rotulo no material da placa some no escuro junto com a tabua. Este preset do jogo tambem e sem
+# iluminacao e traz contorno preto (e o do HUD): letra clara com contorno le de dia e de noite.
+LABEL_MATERIAL = "Valheim_Fonts/Valheim-Norse - Outline"
 
 # O hover do jogo mostra o texto da placa depois de tirar as tags com uma regex que nao aceita
 # ponto: <size=2> some, <size=0.317> fica e vale no hover (que tambem e TextMeshPro). Dai as regras:
@@ -306,8 +309,9 @@ def main():
                         help="preset de material do jogo para os blocos; o padrao e sem iluminacao (icone visivel no escuro). Vazio = material da placa, iluminado pela cena")
     parser.add_argument("--brightness", type=float, default=0.7,
                         help="fator de brilho das cores (sem iluminacao, 1 estoura em bloom a noite; com --material vazio use 1)")
-    parser.add_argument("--label-unlit", action="store_true",
-                        help="rotulo ('Madeira :wood:') tambem no material sem iluminacao, em tom claro; sem isso ele e o texto normal da placa")
+    parser.add_argument("--label-material", default=LABEL_MATERIAL,
+                        help="preset de material do rotulo ('Madeira :wood:'); o padrao e sem iluminacao e com contorno. Vazio = texto normal da placa, que some no escuro")
+    parser.add_argument("--label-color", default="bba", help="cor do rotulo em hex, quando ha --label-material")
     parser.add_argument("--overlap", type=float, default=0.15, help="quanto cada bloco invade o vizinho, em fracao de pixel, para fechar a costura")
     parser.add_argument("--languages", default="English,Portuguese_Brazilian", help="colunas de localizacao que viram apelido")
     parser.add_argument("--preview", help="pasta para gravar PNGs de conferencia")
@@ -320,7 +324,7 @@ def main():
     print(f"{len(icons)} icones, {len(items)} itens com icone, {len(localization)} tokens de localizacao", file=sys.stderr)
 
     texts, titled, aliases, clashes = {}, {}, {}, 0
-    label_style = f"<material={UNLIT_MATERIAL}><#a98>" if args.label_unlit else ""
+    label_style = f'<material="{args.label_material}"><#{args.label_color}>' if args.label_material else ""
 
     def render(icon_id, image):
         small = quantize(shrink(image, args.px), args.colors, args.brightness)
@@ -363,6 +367,9 @@ def main():
         handle.write(f"# valheim-server sign-icons v1 px={args.px} colors={args.colors} units={args.units:g} "
                      f"material={args.material or '-'} brightness={args.brightness:g} overlap={args.overlap:g}\n")
         handle.write("D\tweed\n")
+        # o plugin refaz o cabecalho quando o jogador pede outro tamanho (<size=N>:wood:): precisa do
+        # lado padrao e do extra do Bold nos dois regimes do auto-size (cabe na tabua / nao cabe)
+        handle.write(f"P\tunits\t{args.units:g}\nP\tbold_fit\t{BOLD_ADVANCE:g}\nP\tbold_overflow\t0.03\n")
         # {u} numa placa escrita a mao: o mesmo material sem iluminacao, em 3 caracteres em vez de 38.
         handle.write("M\tu\t<material=" + UNLIT_MATERIAL + ">\n")
         for icon_id, text in sorted(texts.items()):

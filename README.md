@@ -144,6 +144,11 @@ texto (um bloco colorido por pixel). Quem ve e o jogo sem mod nenhum.
   pouco menor para caber. Rotulo de ate 10 caracteres sai grande, ate 22 sai pequeno, e maior
   que isso fica so no hover;
 - quem mira a placa le o rotulo no hover; sem rotulo, le o que foi digitado dentro do codigo;
+- o rotulo aceita cor, negrito e abreviacao (`{u}<#fc6>Madeira :wood:`); tag que muda o tamanho da
+  linha e descartada, porque o desenho depende de tudo caber na tabua;
+- `<size=N>` colado no codigo e o lado do icone em unidades da tabua (ela tem 18,3 x 8,55; o
+  padrao e 7,6): `<size=4>:wood:` encolhe, `<size=15>:wood:` vaza da tabua, ate 18, que e a
+  largura que ainda nao quebra linha. Vale junto com rotulo: `Madeira <size=12>:wood:`;
 - escrever qualquer outra coisa por cima devolve a placa ao jogador. Quem aperta E numa placa de
   icone ve o comeco do texto gerado; confirmar sem mexer nao estraga, o servidor redesenha;
 - so o prefab `sign` e tocado, e so placa com um codigo na ponta do texto, ou que usa
@@ -188,8 +193,9 @@ mediana de ~1,6 mil caracteres e maximo de ~3 mil). O material da placa e ilumin
 icone some no escuro; por padrao o gerador usa o material sem iluminacao do jogo com as cores a
 70% (`--brightness`; cor cheia estoura em bloom a noite). `--material ""  --brightness 1` volta ao
 material da placa. `--overlap` e quanto cada bloco invade o vizinho para fechar a costura entre os
-pixels. `--label-unlit` poe o rotulo no mesmo material sem iluminacao, em tom claro; sem isso ele
-e o texto normal da placa, que some no escuro como qualquer placa.
+pixels. O rotulo sai no preset `Valheim-Norse - Outline` do jogo, tambem sem iluminacao: letra clara
+com contorno preto, que le de dia e de noite (`--label-material`, `--label-color`; material vazio =
+texto normal da placa, que some no escuro).
 
 Trocar `catalog.txt` ou `custom.txt` com o servidor no ar basta: o plugin confere os arquivos a
 cada 5 s, recarrega e redesenha as placas, sem restart.
