@@ -140,14 +140,39 @@ texto (um bloco colorido por pixel). Quem ve e o jogo sem mod nenhum.
 - vale o prefab do item (`:MushroomYellow:`) e o nome no jogo em ingles ou portugues
   (`:yellow mushroom:`, `:cogumelo amarelo:`); maiuscula, acento, espaco e `_` nao importam;
 - codigo desconhecido vira o icone padrao, uma folha (`:weed:`);
+- `Madeira :wood:` (ou `:wood: Madeira`) poe o rotulo na tabua, em cima do icone, que sai um
+  pouco menor para caber. Rotulo de ate 10 caracteres sai grande, ate 22 sai pequeno, e maior
+  que isso fica so no hover;
+- quem mira a placa le o rotulo no hover; sem rotulo, le o que foi digitado dentro do codigo;
 - escrever qualquer outra coisa por cima devolve a placa ao jogador. Quem aperta E numa placa de
   icone ve o comeco do texto gerado; confirmar sem mexer nao estraga, o servidor redesenha;
-- so o prefab `sign` e tocado, e so placa cujo texto inteiro e um codigo.
+- so o prefab `sign` e tocado, e so placa com um codigo na ponta do texto, ou que usa
+  abreviacao ou continuacao (abaixo).
+
+O hover do jogo mostra o texto da placa sem as tags, mas a regex dele nao aceita ponto: tag com
+numero decimal sobra e vale no hover, que tambem e TextMeshPro. O gerador usa isso: as tags do
+desenho tem sempre ponto (no hover o icone vira um cisco), as do rotulo nunca (no hover ele sai
+legivel), e o texto termina devolvendo o tamanho, senao o `[E] Usar` some junto.
+
+**Escrever mais que 50 caracteres.** O corte e do campo de digitacao de cada cliente e nao sai sem
+mod nele; o servidor contorna aceitando texto curto e gravando texto longo:
+
+- `{u}` e abreviacao do catalogo (linha `M`): vira `<material=Valheim_Fonts/Valheim-Norse>`, o
+  material sem iluminacao, que deixa bloco e emoji visiveis no escuro. `{u}<size=20><#f60>🔥` cabe
+  folgado;
+- `>>resto` e continuacao: emenda no que a placa ja tinha. Escreva o comeco, espere a placa
+  atualizar, abra de novo, apague e cole `>>` mais o proximo pedaco, quantas vezes precisar;
+- o servidor guarda o que foi digitado na propria placa: confirmar o texto cortado sem mexer nao
+  estraga, e escrever outra coisa por cima devolve a placa ao jogador.
+
+Desenho com nome e abreviacao de casa vao em `custom.txt`, na mesma pasta do catalogo, no mesmo
+formato (`I<TAB>nome<TAB>rich text com \n`, `A<TAB>apelido<TAB>nome`, `M<TAB>abreviacao<TAB>texto`).
+Ele e lido depois do catalogo gerado e ganha dele, entao regerar os icones nao apaga nada.
 
 O catalogo sai dos arquivos do **seu** jogo e carrega arte dele: nao entra no repositorio.
 
 ```sh
-# 1. gerar, em qualquer maquina com o jogo instalado (~1 min, ~2,5 MB)
+# 1. gerar, em qualquer maquina com o jogo instalado (~1 min, ~5 MB)
 pip install -r tools/sign-icons/requirements.txt
 python tools/sign-icons/build_catalog.py --game "<Steam>/steamapps/common/Valheim/valheim_Data" --out catalog.txt
 # 2. por no volume de config
@@ -159,10 +184,18 @@ docker compose up -d                      # derruba quem estiver jogando
 ```
 
 `--px` escolhe 16, 24 (padrao) ou 32 pixels de lado: mais pixels, mais texto por placa (em 24,
-mediana de ~1,6 mil caracteres e maximo de ~3 mil). Trocar o catalogo redesenha as placas
-existentes no boot seguinte.
-Conferir em `/metrics`: `valheim_sign_icons_catalog_entries`, `valheim_sign_icons_signs`,
-`valheim_sign_icons_changes_total` e `valheim_exporter_patch_ok{target="ZDO.Deserialize"}`.
+mediana de ~1,6 mil caracteres e maximo de ~3 mil). O material da placa e iluminado pela cena e o
+icone some no escuro; por padrao o gerador usa o material sem iluminacao do jogo com as cores a
+70% (`--brightness`; cor cheia estoura em bloom a noite). `--material ""  --brightness 1` volta ao
+material da placa. `--overlap` e quanto cada bloco invade o vizinho para fechar a costura entre os
+pixels. `--label-unlit` poe o rotulo no mesmo material sem iluminacao, em tom claro; sem isso ele
+e o texto normal da placa, que some no escuro como qualquer placa.
+
+Trocar `catalog.txt` ou `custom.txt` com o servidor no ar basta: o plugin confere os arquivos a
+cada 5 s, recarrega e redesenha as placas, sem restart.
+Conferir em `/metrics`: `valheim_sign_icons_catalog_entries`, `valheim_sign_icons_catalog_reloads_total`,
+`valheim_sign_icons_signs`, `valheim_sign_icons_long_texts`, `valheim_sign_icons_changes_total` e
+`valheim_exporter_patch_ok{target="ZDO.Deserialize"}`.
 Rollback = apagar a variavel e recriar; as placas ja desenhadas ficam como estao.
 
 ## Dados

@@ -13,6 +13,7 @@
     <Compile Include="../src/Signs/SignCode.cs" />
     <Compile Include="../src/Signs/SignIconCatalog.cs" />
     <Compile Include="../src/Signs/SignIconRules.cs" />
+    <Compile Include="../src/Signs/SignTextRules.cs" />
   </ItemGroup>
 
   <ItemGroup>

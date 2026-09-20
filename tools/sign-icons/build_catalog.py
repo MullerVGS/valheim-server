@@ -31,6 +31,28 @@ TEXT_AREA_HEIGHT = 8.55
 # A 1a linha reserva a ascendente da fonte e a ultima a descendente: (linhas + 0,45) * pixel.
 LINE_OVERHEAD = 0.45
 
+# Visto no jogo: o material da placa e iluminado pela cena (icone some no escuro) e corta a cor pela
+# metade. A tag <material> aceita qualquer preset de Resources, e o bloco, que vem de fonte de
+# fallback, herda o material corrente. Este e sem iluminacao: a cor sai como escrita, de dia ou de
+# noite, e quem dosa o brilho e a propria cor (cheia estoura em bloom; ~0,6 a 0,7 le bem no escuro).
+UNLIT_MATERIAL = "Valheim_Fonts/Valheim-Norse"
+
+# O hover do jogo mostra o texto da placa depois de tirar as tags com uma regex que nao aceita
+# ponto: <size=2> some, <size=0.317> fica e vale no hover (que tambem e TextMeshPro). Dai as regras:
+# tag do desenho sempre com ponto (no hover o icone vira um cisco, em vez de blocos gigantes), tag
+# do rotulo sempre sem ponto (no hover ele sai no tamanho normal), e o texto termina devolvendo
+# tamanho e espacamento com tags de ponto, senao o "[E] Usar" sai do tamanho do cisco.
+HOVER_RESET = "<size=100.0%><cspace=0.0><line-height=100.0%>"
+# Comeco de todo texto gerado: e por ele que o plugin reconhece um corte de catalogo antigo.
+GENERATED = "<cspace=-0.0>"
+# Rotulo a mostra: tamanho 2 (o plugin troca {ls} por 1 quando o rotulo e comprido) e 1 unidade ate
+# a primeira linha do desenho. Ascendente da Norsebold, que e quem desenha o rotulo: 0,92 em.
+LABEL_SIZE = 2
+LABEL_GAP = 1
+LABEL_ASCENT = 0.92
+NOTO_ASCENT = 1.16
+NOTO_DESCENT = 0.288
+
 
 def normalize(name):
     """Mesma regra do plugin: minusculas, sem acento, so letras e digitos."""
@@ -69,8 +91,8 @@ def shrink(image, px):
     return out
 
 
-def quantize(image, colors):
-    """Paleta curta alonga as sequencias de mesma cor; depois encaixa em #rgb (12 bits)."""
+def quantize(image, colors, brightness=1.0):
+    """Paleta curta alonga as sequencias de mesma cor; depois dosa o brilho e encaixa em #rgb (12 bits)."""
     px = image.load()
     opaque = [(x, y) for y in range(image.height) for x in range(image.width) if px[x, y][3]]
     if not opaque:
@@ -84,19 +106,44 @@ def quantize(image, colors):
     op = out.load()
     for i, (x, y) in enumerate(opaque):
         r, g, b = quant[i, 0]
-        op[x, y] = (round(r / 17) * 17, round(g / 17) * 17, round(b / 17) * 17, 255)
+        op[x, y] = tuple(min(15, round(c * brightness / 17)) * 17 for c in (r, g, b)) + (255,)
     return out
 
 
-def to_rich_text(image, units):
+def number(value):
+    """Sempre com ponto: e o que faz a tag sobreviver no hover (ver HOVER_RESET)."""
+    text = f"{value:.3f}".rstrip("0")
+    return text + "0" if text.endswith(".") else text
+
+
+def to_rich_text(image, units, material="", overlap=0.0, titled=False, label_style=""):
     box = image.getchannel("A").getbbox()
     if box:
         image = image.crop(box)
     width, height = image.size
-    pixel = min(units / max(width, height), TEXT_AREA_HEIGHT * 0.97 / (height + LINE_OVERHEAD))
-    size = f"{pixel:.3f}".rstrip("0").rstrip(".")
+    # O bloco e maior que o passo da grade: cada um cobre a borda suave do vizinho, que sozinha
+    # deixa uma costura fina entre os pixels. O passo (avanco e altura de linha) nao muda.
+    glyph = 1 + overlap
+    room = TEXT_AREA_HEIGHT * 0.97
+    if titled:
+        # rotulo em cima: sobra menos altura, e o desenho tem que caber inteiro na tabua para o
+        # auto-size da placa fechar em 8 (e dele que sai o 0,24 do BOLD_ADVANCE)
+        room -= LABEL_ASCENT * LABEL_SIZE + LABEL_GAP
+        pixel = min(units / max(width, height), room / (height - 1 + NOTO_DESCENT * glyph))
+        head = f"{GENERATED}{label_style}<size={{ls}}><line-height={LABEL_GAP}>{{label}}\n"
+    else:
+        # nome escondido (so para o hover): transparente, tamanho 1 e altura de linha 0, o desenho
+        # comeca na mesma linha de base; so a ascendente dele conta na altura
+        hidden = LABEL_ASCENT * 1
+        pixel = min(units / max(width, height),
+                    (room - hidden) / (height - 1 + NOTO_DESCENT * glyph),
+                    room / (height - 1 + (NOTO_ASCENT + NOTO_DESCENT) * glyph))
+        head = f"{GENERATED}<size=1><line-height=0><#0000>{{label}}\n"
     px = image.load()
-    parts = [f"<cspace=-{BOLD_ADVANCE:g}><line-height={size}><size={size}>"]
+    parts = [head,
+             f"<cspace=-{number(BOLD_ADVANCE + overlap * pixel)}>",
+             f"<material={material}>" if material else "",
+             f"<line-height={number(pixel)}><size={number(pixel * glyph)}>"]
     current = None
     for y in range(height):
         if y:
@@ -112,6 +159,7 @@ def to_rich_text(image, units):
                 current = key
             parts.append(BLOCK * run)
             x += run
+    parts.append(HOVER_RESET)
     return "".join(parts)
 
 
@@ -254,6 +302,13 @@ def main():
     parser.add_argument("--px", type=int, default=24, help="lado do icone em pixels (16, 24 ou 32)")
     parser.add_argument("--colors", type=int, default=16, help="cores por icone")
     parser.add_argument("--units", type=float, default=7.6, help="lado do icone em unidades da placa (a tabua tem 8,55 de altura)")
+    parser.add_argument("--material", default=UNLIT_MATERIAL,
+                        help="preset de material do jogo para os blocos; o padrao e sem iluminacao (icone visivel no escuro). Vazio = material da placa, iluminado pela cena")
+    parser.add_argument("--brightness", type=float, default=0.7,
+                        help="fator de brilho das cores (sem iluminacao, 1 estoura em bloom a noite; com --material vazio use 1)")
+    parser.add_argument("--label-unlit", action="store_true",
+                        help="rotulo ('Madeira :wood:') tambem no material sem iluminacao, em tom claro; sem isso ele e o texto normal da placa")
+    parser.add_argument("--overlap", type=float, default=0.15, help="quanto cada bloco invade o vizinho, em fracao de pixel, para fechar a costura")
     parser.add_argument("--languages", default="English,Portuguese_Brazilian", help="colunas de localizacao que viram apelido")
     parser.add_argument("--preview", help="pasta para gravar PNGs de conferencia")
     args = parser.parse_args()
@@ -264,11 +319,13 @@ def main():
     localization = load_localization(args.game, args.languages.split(","))
     print(f"{len(icons)} icones, {len(items)} itens com icone, {len(localization)} tokens de localizacao", file=sys.stderr)
 
-    texts, aliases, clashes = {}, {}, 0
+    texts, titled, aliases, clashes = {}, {}, {}, 0
+    label_style = f"<material={UNLIT_MATERIAL}><#a98>" if args.label_unlit else ""
 
     def render(icon_id, image):
-        small = quantize(shrink(image, args.px), args.colors)
-        texts[icon_id] = to_rich_text(small, args.units)
+        small = quantize(shrink(image, args.px), args.colors, args.brightness)
+        texts[icon_id] = to_rich_text(small, args.units, args.material, args.overlap)
+        titled[icon_id] = to_rich_text(small, args.units, args.material, args.overlap, titled=True, label_style=label_style)
         if args.preview:
             os.makedirs(args.preview, exist_ok=True)
             small.resize((small.width * 8, small.height * 8), Image.NEAREST).save(os.path.join(args.preview, icon_id + ".png"))
@@ -303,10 +360,14 @@ def main():
         alias(name, "weed")
 
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(f"# valheim-server sign-icons v1 px={args.px} colors={args.colors} units={args.units:g}\n")
+        handle.write(f"# valheim-server sign-icons v1 px={args.px} colors={args.colors} units={args.units:g} "
+                     f"material={args.material or '-'} brightness={args.brightness:g} overlap={args.overlap:g}\n")
         handle.write("D\tweed\n")
+        # {u} numa placa escrita a mao: o mesmo material sem iluminacao, em 3 caracteres em vez de 38.
+        handle.write("M\tu\t<material=" + UNLIT_MATERIAL + ">\n")
         for icon_id, text in sorted(texts.items()):
             handle.write("I\t" + icon_id + "\t" + text.replace("\n", "\\n") + "\n")
+            handle.write("T\t" + icon_id + "\t" + titled[icon_id].replace("\n", "\\n") + "\n")
         for key, icon_id in sorted(aliases.items()):
             handle.write("A\t" + key + "\t" + icon_id + "\n")
     sizes = sorted(len(t) for t in texts.values())
