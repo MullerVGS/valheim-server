@@ -24,6 +24,21 @@ namespace ValheimMetrics
         public long RoutedRpcSent;
         public long CreatureOwnerChanges;
 
+        // Experiencia do jogador (ExperienceCollector).
+        public readonly Histogram RelayPlayers = new Histogram(Experience.Buckets.Delay);
+        public readonly Histogram RelayCreatures = new Histogram(Experience.Buckets.Delay);
+        public int Backlog;
+        public readonly WindowMax BacklogMax = new WindowMax(5);
+        public double LastPacket = -1;
+        public readonly Histogram PacketGap = new Histogram(Experience.Buckets.Gap);
+        public readonly WindowMax PacketGapMax = new WindowMax(5);
+        public readonly Histogram Pickup = new Histogram(Experience.Buckets.Action);
+        public long PickupRequests;
+        public long PickupTimeouts;
+        public readonly Histogram Container = new Histogram(Experience.Buckets.Action);
+        public long ContainerTimeouts;
+        public long LagReports;
+
         public PlayerState(string steamId)
         {
             SteamId = steamId;

@@ -11,10 +11,10 @@ namespace ValheimMetrics
         public static long Errors;
 
         public static bool Patch(Harmony harmony, Type type, string method, Type[] args, Type host,
-            string prefix = null, string postfix = null, string transpiler = null)
+            string prefix = null, string postfix = null, string transpiler = null, string tag = null)
         {
             // O mesmo metodo pode receber patch de mais de um lugar (coletor e ajuste): a chave distingue.
-            var key = type.Name + "." + method + (transpiler == null ? "" : "#transpiler");
+            var key = type.Name + "." + method + (transpiler == null ? "" : "#transpiler") + (tag == null ? "" : "#" + tag);
             try
             {
                 var original = AccessTools.Method(type, method, args)

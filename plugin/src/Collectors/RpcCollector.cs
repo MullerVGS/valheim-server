@@ -143,7 +143,8 @@ namespace ValheimMetrics.Collectors
                 w.Sample(prefix + "_bytes_total", kv.Value.Bytes, "method", NameOf(kv.Key));
         }
 
-        static string NameOf(int hash) => hash == PingHash ? "ping" : _names.Resolve(hash);
+        internal static string NameOf(int hash) =>
+            hash == PingHash ? "ping" : _names?.Resolve(hash) ?? hash.ToString("x8");
 
         static MethodNames BuildNames()
         {

@@ -17,7 +17,6 @@ namespace ValheimMetrics.Collectors
         }
 
         Dictionary<ZDOID, ushort> _owners;
-        HashSet<int> _creaturePrefabs;
         Dictionary<ZDOID, long> _lastCreatureOwner = new Dictionary<ZDOID, long>();
         Dictionary<ZDOID, long> _creatureOwner = new Dictionary<ZDOID, long>();
         readonly Dictionary<long, Owned> _byOwner = new Dictionary<long, Owned>();
@@ -36,7 +35,7 @@ namespace ValheimMetrics.Collectors
             var zdoman = ZDOMan.instance;
             if (zdoman == null)
                 return;
-            EnsureCreaturePrefabs();
+            var creaturePrefabs = Prefabs.Creatures;
 
             foreach (var owned in _byOwner.Values)
                 owned.Zdos = owned.Creatures = owned.EventCreatures = 0;
@@ -50,10 +49,10 @@ namespace ValheimMetrics.Collectors
                     _byOwner[owner] = owned = new Owned();
                 owned.Zdos++;
 
-                if (_creaturePrefabs == null)
+                if (creaturePrefabs == null)
                     continue;
                 var zdo = zdoman.GetZDO(kv.Key);
-                if (zdo == null || !_creaturePrefabs.Contains(zdo.GetPrefab()))
+                if (zdo == null || !creaturePrefabs.Contains(zdo.GetPrefab()))
                     continue;
                 if (zdo.GetBool(ZDOVars.s_eventCreature, false))
                     owned.EventCreatures++;
@@ -115,21 +114,5 @@ namespace ValheimMetrics.Collectors
             p.Peer != null && _byOwner.TryGetValue(p.Peer.m_uid, out var owned) ? owned : Empty;
 
         static readonly Owned Empty = new Owned();
-
-        void EnsureCreaturePrefabs()
-        {
-            if (_creaturePrefabs != null || ZNetScene.instance == null)
-                return;
-            var set = new HashSet<int>();
-            foreach (var prefab in ZNetScene.instance.m_prefabs)
-            {
-                if (prefab == null || prefab.GetComponent<global::Player>() != null)
-                    continue;
-                if (prefab.GetComponent<Character>() != null)
-                    set.Add(prefab.name.GetStableHashCode());
-            }
-            if (set.Count > 0)
-                _creaturePrefabs = set;
-        }
     }
 }
