@@ -18,11 +18,16 @@ const PLAY_STEP_MS = 1400;
 const PAIR_VIEW = { width: 272, height: 150, metersPerPixel: 1.2 };
 
 const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false };
+const HOME = { x: -44, z: -68, metersPerPixel: 3.2 };
+// Camadas e janela dos rastros ficam no navegador de quem olha.
+const PREFS_KEY = 'jahmaica.map';
 let state = null;
 let world = null; // /api/world: baus, camas, construtores
 let items = null;
 let knownPlayers = [];
 let trailHours = 6;
+// Busca: a lista de achados recolhe para nao cobrir o mapa.
+let resultsOpen = true;
 let trailData = null;
 // Dia do historico em exibicao (null = agora, ao vivo) e os pins daquele dia.
 let day = null;
@@ -39,7 +44,7 @@ const hudCoords = $('coords');
 const mapView = new MapView({
   map: $('map'),
   overlay: $('overlay'),
-  view: { x: -44, z: -68, metersPerPixel: 3.2 },
+  view: { ...HOME },
   icons: ['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss', 'death'],
   onDraw: drawOverlay,
   onHover: hover,
@@ -504,7 +509,11 @@ function renderPanel() {
   const status = $('status');
   const online = s.online ?? 0;
   status.className = 'status online';
-  $('status-text').textContent = online === 1 ? '1 viking online' : `${online} vikings online`;
+  $('status-text').textContent = online === 0 ? 'ninguém online' : online === 1 ? '1 viking online' : `${online} vikings online`;
+  // Bolinha no botao do servidor: o jogo mira 120 FPS; abaixo de 60 ja se sente.
+  const dot = $('server-dot');
+  dot.className = `tool-dot ${s.fps == null ? '' : s.fps >= 90 ? 'good' : s.fps >= 50 ? 'warn' : 'bad'}`;
+  $('tool-server').title = s.fps != null ? `Servidor · ${s.fps.toFixed(0)} FPS` : 'Servidor';
   $('s-fps').textContent = s.fps != null ? s.fps.toFixed(0) : '–';
   $('s-frame').textContent = s.frameMax != null ? `${(s.frameMax * 1000).toFixed(0)} ms` : '–';
   $('s-zdos').textContent = s.zdos != null ? fmt.format(s.zdos) : '–';
@@ -526,6 +535,7 @@ function renderPlayers() {
       el('span', { class: 'ping', text: p.ping != null ? `${(p.ping * 1000).toFixed(0)} ms` : '' }),
       el('span', { class: 'where', text: `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}` }));
     li.addEventListener('click', () => {
+      closePops();
       mapView.goTo(p.x, p.z, Math.min(mapView.view.metersPerPixel, 1.5));
       openCard([p.x, p.z], () => playerCard(p));
     });
@@ -569,6 +579,7 @@ async function pollState() {
   } catch {
     $('status').className = 'status offline';
     $('status-text').textContent = 'sem notícias do servidor';
+    $('server-dot').className = 'tool-dot bad';
   }
   setTimeout(pollState, STATE_EVERY_MS);
 }
@@ -619,9 +630,17 @@ function itemTotals() {
 function bindSearch() {
   const input = $('search');
   const list = $('suggestions');
+  let active = -1;
+  const buttons = () => [...list.querySelectorAll('button')];
+  const highlight = (i) => {
+    const all = buttons();
+    active = all.length ? (i + all.length) % all.length : -1;
+    all.forEach((b, k) => b.classList.toggle('active', k === active));
+  };
   const suggest = () => {
     const q = normalize(input.value.trim());
     list.replaceChildren();
+    active = -1;
     if (q.length < 2 || !world || !items) return (list.hidden = true);
     const matches = [...itemTotals().values()]
       .map((t) => ({ ...t, name: itemName(items, t.hash), en: items.byHash.get(t.hash)?.[2] ?? '' }))
@@ -637,19 +656,31 @@ function bindSearch() {
       );
     }
     list.hidden = false;
+    closePops();
   };
   const pick = (hash) => {
     found = hash;
+    resultsOpen = true;
     input.value = itemName(items, hash);
     list.hidden = true;
+    input.blur();
     renderSearchResults();
     mapView.invalidate();
   };
   input.addEventListener('input', suggest);
-  input.addEventListener('focus', suggest);
+  input.addEventListener('focus', () => found == null && suggest());
+  input.addEventListener('blur', () => setTimeout(() => (list.hidden = true), 150));
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') list.querySelector('button')?.click();
-    if (e.key === 'Escape') list.hidden = true;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (list.hidden) suggest();
+      highlight(active + (e.key === 'ArrowDown' ? 1 : -1));
+    }
+    if (e.key === 'Enter') (buttons()[Math.max(0, active)])?.click();
+    if (e.key === 'Escape') {
+      if (!list.hidden) list.hidden = true;
+      else input.blur();
+    }
   });
   $('search-clear').addEventListener('click', () => {
     found = null;
@@ -657,21 +688,34 @@ function bindSearch() {
     list.hidden = true;
     renderSearchResults();
     mapView.invalidate();
+    input.focus();
   });
 }
 
 function renderSearchResults() {
   const out = $('search-results');
-  $('search-clear').hidden = found == null;
+  $('search-clear').hidden = found == null && !$('search').value;
   out.replaceChildren();
-  if (found == null || !world) return;
+  out.hidden = found == null || !world;
+  if (out.hidden) return;
   const chests = world.containers
     .filter((c) => !c.tomb)
     .map((c) => ({ c, n: c.items.filter((i) => i[0] === found).reduce((a, i) => a + i[1], 0) }))
     .filter((r) => r.n > 0)
     .sort((a, b) => b.n - a.n);
   const total = chests.reduce((a, r) => a + r.n, 0);
-  out.append(el('p', { class: 'day-info', text: `${fmt.format(total)} em ${chests.length} ${chests.length === 1 ? 'baú' : 'baús'}` }));
+  const head = el('button', {
+    class: 'results-head', type: 'button', 'aria-expanded': String(resultsOpen),
+    onclick: () => {
+      resultsOpen = !resultsOpen;
+      renderSearchResults();
+    },
+  },
+  itemIcon(items, found, 22),
+  el('span', { class: 'count' }, el('b', { text: fmt.format(total) }), ` em ${chests.length} ${chests.length === 1 ? 'baú' : 'baús'}`),
+  el('span', { class: 'chev', 'aria-hidden': 'true' }));
+  out.append(head);
+  if (!resultsOpen) return;
   const ul = el('ul', { class: 'found' });
   for (const { c, n } of chests.slice(0, 30)) {
     const g = mapView.settlements && baseAt(mapView.settlements, c.x, c.z, BASE_MARGIN);
@@ -681,12 +725,18 @@ function renderSearchResults() {
         el('button', {
           type: 'button',
           onclick: () => {
+            // No celular a lista cobre o mapa: recolhe ao escolher.
+            if (window.matchMedia('(max-width: 720px)').matches) {
+              resultsOpen = false;
+              renderSearchResults();
+            }
             mapView.goTo(c.x, c.z, Math.min(mapView.view.metersPerPixel, 0.8));
             openCard([c.x, c.z], () => chestCard(c));
           },
         }, el('span', { class: 'name', text: containerTitle(c) }), el('span', { class: 'qty', text: fmt.format(n) }), el('span', { class: 'where', text: where }))),
     );
   }
+  if (chests.length > 30) ul.append(el('li', { class: 'more', text: `e mais ${chests.length - 30} baús com pouco` }));
   out.append(ul);
 }
 
@@ -701,6 +751,14 @@ async function setupTimeline() {
   const slider = $('day');
   const play = $('day-play');
   const label = $('day-label');
+  const live = $('day-live');
+  const toggle = $('growth-toggle');
+  const wrap = $('growth-wrap');
+  toggle.addEventListener('click', () => {
+    wrap.hidden = !wrap.hidden;
+    toggle.setAttribute('aria-expanded', String(!wrap.hidden));
+    $('timeline').classList.toggle('open', !wrap.hidden);
+  });
   if (!days.length) {
     info.textContent = 'Nenhum dia guardado ainda.';
     slider.disabled = play.disabled = true;
@@ -727,10 +785,13 @@ async function setupTimeline() {
   };
   const describe = () => {
     const d = at(Number(slider.value));
-    label.textContent = d ? `${dayMonth(Date.parse(`${d.date}T12:00`))} às ${d.time}` : 'Agora (ao vivo)';
+    label.replaceChildren(...(d
+      ? [`${dayMonth(Date.parse(`${d.date}T12:00`))} · ${d.time}`]
+      : [el('span', { class: 'live-dot', 'aria-hidden': 'true' }), 'Ao vivo']));
+    live.hidden = !d;
     info.textContent = d
       ? `${d.exploredKm2.toFixed(1)} km² explorados · ${d.pieces != null ? fmt.format(d.pieces) : '–'} construções · ${d.pins} marcações`
-      : 'Mapa ao vivo, com jogadores, baús, portais e camas.';
+      : 'Construções por dia. Clique numa coluna para ver o mapa daquele dia.';
     renderChart();
   };
   let loading = null;
@@ -759,11 +820,20 @@ async function setupTimeline() {
   slider.addEventListener('input', () => describe());
   slider.addEventListener('change', () => go(Number(slider.value)));
   let playing = false;
+  const stop = () => {
+    playing = false;
+    play.textContent = '▶';
+    play.setAttribute('aria-label', 'Tocar a linha do tempo');
+  };
+  live.addEventListener('click', () => {
+    stop();
+    go(ordered.length);
+  });
   play.addEventListener('click', async () => {
-    playing = !playing;
-    play.textContent = playing ? '❚❚' : '▶';
-    play.setAttribute('aria-label', playing ? 'Pausar' : 'Tocar a linha do tempo');
-    if (!playing) return;
+    if (playing) return stop();
+    playing = true;
+    play.textContent = '❚❚';
+    play.setAttribute('aria-label', 'Pausar');
     let i = Number(slider.value) >= ordered.length ? 0 : Number(slider.value);
     while (playing && i <= ordered.length) {
       const t0 = performance.now();
@@ -772,45 +842,94 @@ async function setupTimeline() {
       await new Promise((r) => setTimeout(r, Math.max(0, PLAY_STEP_MS - (performance.now() - t0))));
       i++;
     }
-    playing = false;
-    play.textContent = '▶';
-    play.setAttribute('aria-label', 'Tocar a linha do tempo');
+    stop();
   });
   describe();
 }
 
+// ---------- popups ----------
+
+function closePops(except = null) {
+  for (const btn of document.querySelectorAll('[data-pop]')) {
+    if (btn.dataset.pop === except) continue;
+    btn.setAttribute('aria-expanded', 'false');
+    $(btn.dataset.pop).hidden = true;
+  }
+}
+
+function bindPops() {
+  for (const btn of document.querySelectorAll('[data-pop]')) {
+    btn.addEventListener('click', () => {
+      const pop = $(btn.dataset.pop);
+      closePops(btn.dataset.pop);
+      pop.hidden = !pop.hidden;
+      btn.setAttribute('aria-expanded', String(!pop.hidden));
+    });
+  }
+  // Clique fora fecha; arrastar o mapa tambem.
+  document.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.pop, [data-pop]')) return;
+    closePops();
+  });
+}
+
 // ---------- entrada ----------
 
+function loadPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}');
+    for (const k of Object.keys(layers)) if (typeof saved.layers?.[k] === 'boolean') layers[k] = saved.layers[k];
+    if ([1, 6, 24].includes(saved.trailHours)) trailHours = saved.trailHours;
+  } catch {}
+}
+
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ layers, trailHours }));
+  } catch {}
+}
+
 function bindPanel() {
+  loadPrefs();
   for (const input of document.querySelectorAll('#layers input')) {
-    layers[input.dataset.layer] = input.checked;
+    input.checked = layers[input.dataset.layer];
     input.addEventListener('change', () => {
       layers[input.dataset.layer] = input.checked;
       mapView.showPieces = layers.pieces;
       if (input.dataset.layer === 'trails') loadTrails();
+      savePrefs();
       mapView.invalidate();
     });
   }
-  $('trail-hours').addEventListener('change', (e) => {
-    trailHours = Number(e.target.value);
-    const box = document.querySelector('[data-layer="trails"]');
-    if (!box.checked) {
-      box.checked = true;
+  const hourButtons = [...document.querySelectorAll('#trail-hours button')];
+  const markHours = () => hourButtons.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.hours) === trailHours)));
+  markHours();
+  for (const b of hourButtons) {
+    b.addEventListener('click', () => {
+      trailHours = Number(b.dataset.hours);
+      markHours();
+      // Escolher a janela liga os rastros.
       layers.trails = true;
-    }
-    loadTrails();
-  });
-  const panel = $('panel');
-  $('panel-toggle').addEventListener('click', () => {
-    const collapsed = panel.classList.toggle('collapsed');
-    $('panel-toggle').setAttribute('aria-expanded', String(!collapsed));
-  });
-  if (window.matchMedia('(max-width: 720px)').matches) {
-    panel.classList.add('collapsed');
-    $('panel-toggle').setAttribute('aria-expanded', 'false');
+      document.querySelector('[data-layer="trails"]').checked = true;
+      savePrefs();
+      loadTrails();
+    });
   }
+  bindPops();
+  const zoom = (k) => mapView.flyTo(mapView.view.x, mapView.view.z, mapView.view.metersPerPixel * k, 250);
+  $('zoom-in').addEventListener('click', () => zoom(0.5));
+  $('zoom-out').addEventListener('click', () => zoom(2));
+  $('zoom-home').addEventListener('click', () => mapView.flyTo(HOME.x, HOME.z, HOME.metersPerPixel));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeCard();
+    const typing = e.target.closest?.('input, textarea, select');
+    if (e.key === 'Escape') {
+      closeCard();
+      closePops();
+    }
+    if (e.key === '/' && !typing) {
+      e.preventDefault();
+      $('search').focus();
+    }
   });
 }
 
@@ -822,6 +941,7 @@ async function main() {
   pollHistory();
   pollWorld();
   setupTimeline();
+  loadTrails();
   setInterval(tickSave, 1000);
   setInterval(loadTrails, TRAILS_EVERY_MS);
   try {
