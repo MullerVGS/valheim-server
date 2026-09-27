@@ -181,7 +181,7 @@ void main() {
       // nao cor de interface.
       float lum = dot(pc.rgb, vec3(0.299, 0.587, 0.114));
       vec3 sepia = mix(vec3(1.0), bg.rgb / max(max(bg.r, bg.g), max(bg.b, 1e-3)), 0.3);
-      vec3 painted = mix(vec3(lum), pc.rgb, 0.5) * sepia * (0.6 + 0.8 * g) * flatLight * 1.1;
+      vec3 painted = mix(vec3(lum), pc.rgb, 0.75) * sepia * (0.6 + 0.8 * g) * flatLight * 1.1;
       col.rgb = mix(col.rgb, painted, small ? 0.5 : 0.72);
     }
     col.rgb *= 1.0 - 0.3 * shade;
