@@ -220,3 +220,18 @@ html, body {
   .panel.collapsed .panel-body { display: none; }
   .hud { left: 12px; bottom: max(10px, env(safe-area-inset-bottom)); }
 }
+
+.timeline select {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  padding: 7px 8px;
+}
+.timeline select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.day-info { margin: 6px 0 10px; font-size: 13px; color: var(--ink-soft); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+body.past .brand h1::after { content: ' · passado'; font-size: 0.45em; color: var(--accent); vertical-align: middle; }

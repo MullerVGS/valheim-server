@@ -3,10 +3,11 @@
 // consultas fixas ao VictoriaMetrics (nada de PromQL vindo do navegador).
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MapData } from './terrain.mjs';
+import { Archive } from './archive.mjs';
+import { MapData, maskTerrain } from './terrain.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -18,6 +19,10 @@ const HISTORY_TTL_MS = 60000;
 const MAP_DIR = process.env.MAP_DIR || null;
 const SAVE_DIR = process.env.SAVE_DIR || null;
 const MAP_CHECK_MS = 15000;
+const BACKUPS_DIR = process.env.BACKUPS_DIR || null;
+const ARCHIVE_DIR = process.env.ARCHIVE_DIR || null;
+const WORLD = process.env.WORLD_NAME || '';
+const ARCHIVE_EVERY_MS = 3600000;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -144,6 +149,63 @@ async function refreshMap() {
   }
 }
 
+// Historico: um retrato por dia a partir dos backups (archive.mjs).
+const archive = BACKUPS_DIR && ARCHIVE_DIR ? new Archive({ backupsDir: BACKUPS_DIR, archiveDir: ARCHIVE_DIR, mapDir: MAP_DIR, world: WORLD }) : null;
+const dayTerrain = new Map();
+
+async function runArchive() {
+  try {
+    await archive.run();
+    dayTerrain.clear();
+  } catch (err) {
+    console.error('historico:', err.message);
+  }
+}
+
+// Minimap.PinType pelo numero, e os tokens de traducao que o servidor dedicado nao resolve.
+const PIN_TYPES = ['Icon0', 'Icon1', 'Icon2', 'Icon3', 'Death', 'Bed', 'Icon4', 'Shout', 'None', 'Boss', 'Player',
+  'RandomEvent', 'Ping', 'EventArea', 'Hildir1', 'Hildir2', 'Hildir3'];
+const PIN_TOKENS = {
+  $enemy_eikthyr: 'Eikthyr', $enemy_gdking: 'O Ancião', $enemy_bonemass: 'Massa Óssea', $enemy_dragon: 'Moder',
+  $enemy_goblinking: 'Yagluth', $enemy_seekerqueen: 'A Rainha', $enemy_fader: 'Fader',
+  $hud_pin_hildir1: 'Baú da Hildir 1', $hud_pin_hildir2: 'Baú da Hildir 2', $hud_pin_hildir3: 'Baú da Hildir 3',
+};
+
+async function playerNames() {
+  try {
+    const text = await readFile(join(MAP_DIR, 'players.tsv'), 'utf8');
+    return new Map(text.split('\n').filter(Boolean).map((l) => l.split('\t')));
+  } catch {
+    return new Map();
+  }
+}
+
+async function dayPins(date) {
+  const names = await playerNames();
+  return (await archive.pins(date)).map((p) => ({
+    x: Math.round(p.x),
+    z: Math.round(p.z),
+    name: p.name.startsWith('$') ? PIN_TOKENS[p.name] ?? p.name.slice(1) : p.name,
+    type: PIN_TYPES[p.type] ?? String(p.type),
+    checked: p.checked,
+    author: names.get(p.author.replace(/^Steam_/, '')) ?? '',
+  }));
+}
+
+async function dayTerrainPacked(date) {
+  if (!dayTerrain.has(date)) {
+    if (!mapData.full) return null;
+    if (dayTerrain.size >= 4) dayTerrain.delete(dayTerrain.keys().next().value);
+    dayTerrain.set(date, maskTerrain(mapData.full, await archive.explored(date)));
+  }
+  return dayTerrain.get(date);
+}
+
+function sendJson(res, value) {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(value));
+}
+
 function sendPacked(req, res, packed) {
   if (!packed) return notFound(res);
   const headers = {
@@ -209,6 +271,16 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       return res.end('ok');
     }
+    if (url.pathname === '/api/days') return sendJson(res, archive ? archive.days : []);
+    const day = url.pathname.match(/^\/(?:api|data)\/days\/(\d{4}-\d{2}-\d{2})\/(pins|terrain\.bin|pieces\.bin)$/);
+    if (day) {
+      const [, date, what] = day;
+      if (!archive?.has(date)) return notFound(res);
+      if (what === 'pins') return sendJson(res, await dayPins(date));
+      if (what === 'terrain.bin') return sendPacked(req, res, await dayTerrainPacked(date));
+      const gz = await archive.piecesGz(date);
+      return sendPacked(req, res, gz && { gz, etag: `"p-${date}-${gz.length}"` });
+    }
     if (url.pathname === '/data/terrain.bin') return sendPacked(req, res, mapData.terrain);
     if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, mapData.pieces);
     const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
@@ -224,4 +296,8 @@ const server = createServer(async (req, res) => {
 
 await refreshMap();
 setInterval(refreshMap, MAP_CHECK_MS).unref();
+if (archive) {
+  runArchive();
+  setInterval(runArchive, ARCHIVE_EVERY_MS).unref();
+}
 server.listen(PORT, () => console.log(`valheim-site em :${PORT} (victoria ${VM}, plugin ${MAP_DIR ?? '-'}, save ${SAVE_DIR ?? '-'})`));

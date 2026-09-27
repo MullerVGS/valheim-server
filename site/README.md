@@ -25,6 +25,16 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   0 madeira, 1 madeira nobre, 2 madeira de Yggdrasil, 3 pedra, 4 mármore, 5 grausten, 6 ferro,
   7 antigo, 8 gelo, 9 móvel/estação, 10 plantação, 11 barco. 404 enquanto o plugin não gravou.
 - `GET /api/state`, `GET /api/history`: jogadores, marcações, portais, camas, mesas e métricas.
+- `GET /api/days`: dias guardados (data, hora do save, km² explorados, construções, marcações);
+  `GET /data/days/<AAAA-MM-DD>/terrain.bin`, `.../pieces.bin` e `GET /api/days/<AAAA-MM-DD>/pins`: o mapa daquele dia.
+
+## Histórico
+
+O servidor apaga zip de backup com mais de `BACKUPS_MAX_AGE` dias. `archive.mjs` copia o último zip de cada dia
+para `ARCHIVE_DIR/saves` (fica para sempre, ~23 MB por dia) e tira dele um retrato do mapa em `ARCHIVE_DIR/days`:
+explorado, pins das mesas e construções. `saves.mjs` lê o save da 1.0 fora do jogo (índice `_main.<n>.chunks`
++ chunks, formato do `ZDO.Save`); a forma de cada peça vem do `pieces-catalog.bin` do plugin. Roda no boot e
+de hora em hora, e refaz um dia quando aparece zip mais novo dele.
 
 ## Preparar
 

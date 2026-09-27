@@ -41,6 +41,10 @@ const view = { x: -44, z: -68, metersPerPixel: 3.2, pixelRatio: 1 };
 const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true };
 let state = null;
 let renderer = null;
+// Dia do historico em exibicao (null = agora, ao vivo) e os pins daquele dia.
+let day = null;
+let dayPins = [];
+let biomeTable = null;
 let icons = {};
 let pieces = null;
 let settlements = null;
@@ -282,7 +286,7 @@ function drawOverlay() {
   ctx.shadowBlur = 3;
 
   if (layers.beds) {
-    for (const b of state.beds) {
+    for (const b of day ? [] : state.beds) {
       const [sx, sy] = toScreen(b.x, b.z);
       if (!visible(sx, sy)) continue;
       icon('bed', sx, sy, iconSize * 0.75, 0.9);
@@ -290,7 +294,7 @@ function drawOverlay() {
     }
   }
   if (layers.portals) {
-    for (const p of state.portals) {
+    for (const p of day ? [] : state.portals) {
       const [sx, sy] = toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       icon('portal', sx, sy, iconSize * 0.8, p.connected ? 1 : 0.55);
@@ -303,7 +307,7 @@ function drawOverlay() {
 
   const labelQueue = [];
   if (layers.pins) {
-    for (const p of state.pins) {
+    for (const p of day ? dayPins : state.pins) {
       const [sx, sy] = toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       const name = PIN_ICONS[p.type] ?? 'pin';
@@ -319,7 +323,7 @@ function drawOverlay() {
   const playerLabels = [];
   if (layers.players) {
     ctx.shadowBlur = 4;
-    for (const p of state.players) {
+    for (const p of day ? [] : state.players) {
       const [sx, sy] = toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       icon('player_32', sx, sy, iconSize + 4);
@@ -444,37 +448,95 @@ async function pollHistory() {
   setTimeout(pollHistory, HISTORY_EVERY_MS);
 }
 
+// Terreno e construcoes de agora ou de um dia do historico, trocados no renderer ja montado.
+async function loadWorld(r, date) {
+  const base = date ? `data/days/${date}/` : 'data/';
+  const [terrainBuf, piecesBuf] = await Promise.all([
+    fetch(base + 'terrain.bin').then((res) => {
+      if (!res.ok) throw new Error(`terreno ${res.status}`);
+      return res.arrayBuffer();
+    }),
+    // Sem construcoes o mapa abre do mesmo jeito.
+    fetch(base + 'pieces.bin')
+      .then((res) => (res.ok ? res.arrayBuffer() : null))
+      .catch(() => null),
+  ]);
+  pieces = piecesBuf && r.pieces ? parsePieces(piecesBuf) : null;
+  settlements = pieces ? groupSettlements(pieces) : [];
+  if (r.pieces) r.setPieces(pieces ?? parsePieces(emptyPieces()));
+  r.setTerrain(parseTerrain(terrainBuf), biomeTable);
+}
+
+function emptyPieces() {
+  const b = new ArrayBuffer(8);
+  new Uint8Array(b).set([86, 80, 67, 49]);
+  return b;
+}
+
+const fmtDay = (d) => `${d.date.slice(8, 10)}/${d.date.slice(5, 7)}`;
+
+async function setupTimeline() {
+  let days = [];
+  try {
+    days = await (await fetch('api/days', { cache: 'no-store' })).json();
+  } catch {}
+  const select = $('day');
+  const info = $('day-info');
+  if (!days.length) {
+    info.textContent = 'Nenhum dia guardado ainda.';
+    select.disabled = true;
+    return;
+  }
+  for (const d of days) {
+    const opt = document.createElement('option');
+    opt.value = d.date;
+    opt.textContent = `${fmtDay(d)} às ${d.time}`;
+    select.append(opt);
+  }
+  const describe = () => {
+    const d = days.find((x) => x.date === select.value);
+    info.textContent = d
+      ? `${d.exploredKm2.toFixed(1)} km² explorados · ${d.pieces != null ? fmt.format(d.pieces) : '–'} construções · ${d.pins} marcações`
+      : 'Mapa ao vivo, com jogadores, portais e camas.';
+  };
+  describe();
+  select.addEventListener('change', async () => {
+    const date = select.value || null;
+    select.disabled = true;
+    try {
+      if (date) dayPins = await (await fetch(`api/days/${date}/pins`)).json();
+      if (renderer) await loadWorld(renderer, date);
+      day = date;
+      document.body.classList.toggle('past', !!date);
+    } catch (err) {
+      console.error(err);
+    }
+    select.disabled = false;
+    describe();
+    dirty = true;
+  });
+}
+
 async function main() {
   readHash();
   resize();
   bindInput();
   pollState();
   pollHistory();
+  setupTimeline();
   setInterval(tickSave, 1000);
   requestAnimationFrame(frame);
   try {
     const art = await (await fetch(`${GAME}/art.json`)).json();
     const r = new MapRenderer(mapCanvas);
-    const [, terrainBuf, iconList, piecesBuf] = await Promise.all([
+    biomeTable = biomeColors(art);
+    const [, iconList] = await Promise.all([
       r.loadArt(GAME, art),
-      fetch('data/terrain.bin').then((res) => {
-        if (!res.ok) throw new Error(`terreno ${res.status}`);
-        return res.arrayBuffer();
-      }),
       Promise.all(['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss'].map(loadIcon)),
-      // Sem construcoes o mapa abre do mesmo jeito.
-      fetch('data/pieces.bin')
-        .then((res) => (res.ok ? res.arrayBuffer() : null))
-        .catch(() => null),
     ]);
-    if (piecesBuf && r.pieces) {
-      pieces = parsePieces(piecesBuf);
-      settlements = groupSettlements(pieces);
-      r.setPieces(pieces);
-    }
+    await loadWorld(r, null);
     r.showPieces = layers.pieces;
     icons = Object.fromEntries(iconList);
-    r.setTerrain(parseTerrain(terrainBuf), biomeColors(art));
     await document.fonts.load('700 16px Norse');
     renderer = r;
     dirty = true;

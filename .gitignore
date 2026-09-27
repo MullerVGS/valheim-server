@@ -19,3 +19,4 @@ __pycache__/
 # site: arte extraida do jogo (Iron Gate) e dados do mundo
 site/public/game/
 site/data/
+site/archive/
