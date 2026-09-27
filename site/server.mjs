@@ -1,6 +1,7 @@
 // Site do servidor: mapa no estilo do jogo + metricas basicas. Sem dependencias.
 // Estatico em public/, dados do mapa recortados pelo explorado (terrain.mjs) e /api/* com
 // consultas fixas ao VictoriaMetrics (nada de PromQL vindo do navegador).
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -249,6 +250,26 @@ async function sendFile(req, res, path) {
   createReadStream(path).pipe(res);
 }
 
+// A Cloudflare troca o no-cache de .js/.css por 4 h de cache no navegador; so o HTML chega sempre
+// fresco. Entao a pagina aponta para o codigo com a versao no endereco, e os modulos importados entre
+// si passam pelo mesmo mapa de importacao.
+const CODE = ['app.js', 'mapgl.js', 'pieces.js', 'style.css'];
+
+async function sendPage(res) {
+  let html = await readFile(join(PUBLIC, 'index.html'), 'utf8');
+  const v = {};
+  for (const name of CODE) {
+    v[name] = createHash('sha1').update(await readFile(join(PUBLIC, name))).digest('hex').slice(0, 10);
+  }
+  const imports = Object.fromEntries(CODE.filter((n) => n.endsWith('.js')).map((n) => [`./${n}`, `./${n}?v=${v[n]}`]));
+  html = html
+    .replace('href="style.css"', `href="style.css?v=${v['style.css']}"`)
+    .replace('<script type="module" src="app.js"></script>',
+      `<script type="importmap">${JSON.stringify({ imports })}</script>\n  <script type="module" src="app.js?v=${v['app.js']}"></script>`);
+  res.writeHead(200, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' });
+  res.end(html);
+}
+
 function notFound(res) {
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('not found');
@@ -283,7 +304,8 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === '/data/terrain.bin') return sendPacked(req, res, mapData.terrain);
     if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, mapData.pieces);
-    const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+    if (url.pathname === '/' || url.pathname === '/index.html') return await sendPage(res);
+    const rel = decodeURIComponent(url.pathname.slice(1));
     const path = inside(PUBLIC, rel);
     if (!path) return notFound(res);
     return sendFile(req, res, path);
