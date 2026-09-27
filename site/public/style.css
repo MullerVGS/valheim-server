@@ -564,3 +564,7 @@ body.page { min-height: 100vh; background: radial-gradient(ellipse at 50% -10%, 
 .chest .meta a { color: var(--accent); }
 .more-button { margin-top: 12px; font: inherit; font-size: 15px; color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid var(--panel-edge); border-radius: 4px; padding: 8px 14px; cursor: pointer; }
 .more-button:hover, .more-button:focus-visible { border-color: var(--accent); }
+.card.in-map { position: absolute; width: min(320px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow-y: auto; }
+@media (max-width: 720px) {
+  .card.in-map { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; max-height: 70%; }
+}
