@@ -131,6 +131,26 @@ services:
       - server:/opt/valheim:ro
       - config:/config
 
+  # Site com o mapa no estilo do jogo e metricas basicas (site/). Opcional, e nao encosta no jogo:
+  # le o save so para saber o que as mesas mostram e pega o resto no VictoriaMetrics.
+  # Antes: site/data/terrain-full.bin e site/public/game (ver site/README.md). Subir sem recriar o jogo:
+  #   docker compose --profile site up -d --no-deps site
+  site:
+    build: ./site
+    profiles: [site]
+    container_name: valheim-site
+    restart: unless-stopped
+    environment:
+      VM_URL: ${SITE_VM_URL:-http://victoriametrics:8428}
+      SAVE_DIR: /config/worlds_local/${WORLD_NAME}
+    volumes:
+      - config:/config:ro
+      - ./site/data:/app/data:ro
+      - ./site/public/game:/app/public/game:ro
+    # O jogo e single-thread e divide o host: o site nunca passa de meio nucleo.
+    cpus: 0.5
+    mem_limit: 256m
+
 volumes:
   config:
   server:

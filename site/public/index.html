@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Valheim</title>
+  <meta name="description" content="Mapa e estado do servidor de Valheim Valheim">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="map" aria-label="Mapa do mundo"></canvas>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+    <div id="tooltip" role="tooltip" hidden></div>
+    <div id="loading">Abrindo o mapa…</div>
+  </main>
+
+  <header class="brand">
+    <h1>Valheim</h1>
+    <p id="status" class="status"><span class="dot"></span><span id="status-text">conectando…</span></p>
+  </header>
+
+  <aside id="panel" class="panel">
+    <button id="panel-toggle" class="panel-toggle" aria-expanded="true" aria-controls="panel-body">Servidor</button>
+    <div id="panel-body" class="panel-body">
+      <section>
+        <h2>Vikings no mundo</h2>
+        <ul id="players" class="players"></ul>
+        <figure class="spark">
+          <svg id="spark-online" viewBox="0 0 240 44" preserveAspectRatio="none" role="img" aria-label="Jogadores online nas últimas 24 horas"></svg>
+          <figcaption>jogadores nas últimas 24 h</figcaption>
+        </figure>
+      </section>
+      <section>
+        <h2>Servidor</h2>
+        <dl class="stats">
+          <div><dt>FPS</dt><dd id="s-fps">–</dd></div>
+          <div><dt>Pior frame (5 min)</dt><dd id="s-frame">–</dd></div>
+          <div><dt>Objetos no mundo</dt><dd id="s-zdos">–</dd></div>
+          <div><dt>Próximo save</dt><dd id="s-save">–</dd></div>
+          <div><dt>Explorado nas mesas</dt><dd id="s-explored">–</dd></div>
+          <div><dt>Versão</dt><dd id="s-version">–</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>No mapa</h2>
+        <div class="layers" id="layers">
+          <label><input type="checkbox" data-layer="pins" checked> <img src="game/icons/house.png" alt=""> Marcações</label>
+          <label><input type="checkbox" data-layer="labels" checked> <span class="aa">Aa</span> Nomes</label>
+          <label><input type="checkbox" data-layer="portals"> <img src="game/icons/portal.png" alt=""> Portais</label>
+          <label><input type="checkbox" data-layer="beds"> <img src="game/icons/bed.png" alt=""> Camas</label>
+          <label><input type="checkbox" data-layer="players" checked> <img src="game/icons/player_32.png" alt=""> Jogadores</label>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <footer class="hud">
+    <span id="coords">x –, z –</span>
+    <span class="scale"><span id="scale-bar"></span><span id="scale-text"></span></span>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
