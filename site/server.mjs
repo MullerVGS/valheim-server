@@ -108,7 +108,13 @@ async function buildState() {
       checked: r.metric.checked === 'sim',
       author: r.metric.author ?? '',
     })),
-    portals: portals.map((r) => ({ ...xz(r.metric), connected: r.metric.connected === 'sim', tag: r.metric.tag ?? '' })),
+    portals: portals.map((r) => ({
+      ...xz(r.metric),
+      connected: r.metric.connected === 'sim',
+      tag: r.metric.tag ?? '',
+      // Onde o par esta, "x, z" arredondado a 1 m pelo plugin.
+      target: r.metric.target ? r.metric.target.split(',').map(Number) : null,
+    })),
     beds: beds.map((r) => ({ ...xz(r.metric), owner: r.metric.owner ?? '' })),
     tables: tables.map((r) => xz(r.metric)),
   };

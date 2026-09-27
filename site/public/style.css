@@ -271,6 +271,26 @@ body.past .brand h1::after { content: ' · passado'; font-size: 0.45em; color: v
   text-decoration: none;
 }
 .card-link:hover, .card-link:focus-visible { text-decoration: underline; }
+.pair {
+  display: block;
+  width: 100%;
+  margin: 8px 0 2px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.pair:hover, .pair:focus-visible { border-color: var(--accent); outline: none; }
+.pair-shot { display: block; width: 100%; height: auto; }
+.pair-shot.empty { padding: 40px 8px; text-align: center; color: var(--ink-soft); }
+.pair-caption { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; background: rgba(0, 0, 0, 0.35); }
+.pair:hover .pair-caption span:first-child, .pair:focus-visible .pair-caption span:first-child { color: var(--accent); }
+.pair-caption .meta { color: var(--ink-soft); white-space: nowrap; }
 
 /* ---------- itens ---------- */
 .item-icon {
