@@ -24,6 +24,8 @@
     <Compile Include="../src/Chests/ChestItems.cs" />
     <Compile Include="../src/Chests/ChestKeeper.cs" />
     <Compile Include="../src/Traffic/TrafficBook.cs" />
+    <Compile Include="../src/Ownership/SectorCursor.cs" />
+    <Compile Include="../src/Ownership/OwnerTally.cs" />
     <Compile Include="../src/Map/SharedMap.cs" />
     <Compile Include="../src/Map/MapProjection.cs" />
     <Compile Include="../src/Map/Png.cs" />

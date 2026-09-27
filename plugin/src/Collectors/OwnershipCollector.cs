@@ -1,33 +1,96 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using HarmonyLib;
 using ValheimMetrics.Exposition;
+using ValheimMetrics.Ownership;
+using ValheimMetrics.Traffic;
 
 namespace ValheimMetrics.Collectors
 {
     // Quem simula o que. O servidor nao simula mob: cada ZDO tem um dono, e e o cliente dele que roda a IA.
-    // Varre ZDOExtraData.s_owner (so ZDOs com dono), nao os ~200k de m_objectsByID.
+    // Com o mundo passando de um milhao de ZDOs, a varredura inteira num frame so custava 30-50 ms por segundo;
+    // agora ela anda pelos baldes por setor com orcamento por frame e so publica a volta completa.
     sealed class OwnershipCollector : ICollector
     {
-        sealed class Owned
-        {
-            public long Zdos;
-            public long Creatures;
-            public long EventCreatures;
-        }
+        const double BudgetSeconds = 0.001;
+        const int CheckEvery = 256;
 
-        Dictionary<ZDOID, ushort> _owners;
-        Dictionary<ZDOID, long> _lastCreatureOwner = new Dictionary<ZDOID, long>();
-        Dictionary<ZDOID, long> _creatureOwner = new Dictionary<ZDOID, long>();
-        readonly Dictionary<long, Owned> _byOwner = new Dictionary<long, Owned>();
-        readonly List<long> _gone = new List<long>();
+        static AccessTools.FieldRef<ZDOMan, List<ZDO>[]> _bySector;
+        static ZDOMan _zdoman;
+        static SectorCursor<ZDO> _cursor;
+        static readonly OwnerTally Tally = new OwnerTally();
+        static readonly Stopwatch Step = new Stopwatch();
+        static readonly Func<bool> OverBudget = () => Step.Elapsed.TotalSeconds >= BudgetSeconds;
+        static readonly Action<ZDO> Visit = Count;
+        static HashSet<int> _creaturePrefabs;
+
+        static double _passStartedAt = -1;
+        static double _passWork;
+        static double _passStepMax;
+        static double _lastPassSeconds;
+        static double _lastPassWork;
+        static double _lastPassStepMax;
 
         public string Name => "ownership";
 
         public void Install(Harmony harmony)
         {
-            _owners = (Dictionary<ZDOID, ushort>)AccessTools.Field(typeof(ZDOExtraData), "s_owner")?.GetValue(null)
-                ?? throw new MissingFieldException("ZDOExtraData", "s_owner");
+            _bySector = AccessTools.FieldRefAccess<ZDOMan, List<ZDO>[]>("m_objectsBySector");
+        }
+
+        public static void OnFrame(double now)
+        {
+            if (_bySector == null)
+                return;
+            var zdoman = ZDOMan.instance;
+            if (zdoman == null || (_creaturePrefabs = Prefabs.Creatures) == null)
+                return;
+            if (zdoman != _zdoman)
+            {
+                _zdoman = zdoman;
+                _cursor = new SectorCursor<ZDO>(_bySector(zdoman), CheckEvery);
+                _passStartedAt = -1;
+            }
+            if (_passStartedAt < 0)
+            {
+                _passStartedAt = now;
+                _passWork = _passStepMax = 0;
+            }
+
+            Step.Restart();
+            bool wrapped = _cursor.Step(OverBudget, Visit);
+            double spent = Step.Elapsed.TotalSeconds;
+            _passWork += spent;
+            if (spent > _passStepMax)
+                _passStepMax = spent;
+
+            if (!wrapped)
+                return;
+            Tally.Finish();
+            _lastPassSeconds = now - _passStartedAt;
+            _lastPassWork = _passWork;
+            _lastPassStepMax = _passStepMax;
+            _passStartedAt = -1;
+        }
+
+        static void Count(ZDO zdo)
+        {
+            long owner = zdo.GetOwner();
+            if (owner == 0)
+                return;
+            if (!_creaturePrefabs.Contains(zdo.GetPrefab()))
+            {
+                Tally.Add(owner);
+                return;
+            }
+            var key = new ZdoKey(zdo.m_uid.UserID, zdo.m_uid.ID);
+            if (Tally.AddCreature(owner, key, zdo.GetBool(ZDOVars.s_eventCreature, false)))
+            {
+                var player = Players.ForUid(owner);
+                if (player != null)
+                    player.CreatureOwnerChanges++;
+            }
         }
 
         public void Write(PrometheusWriter w, double now)
@@ -35,54 +98,22 @@ namespace ValheimMetrics.Collectors
             var zdoman = ZDOMan.instance;
             if (zdoman == null)
                 return;
-            var creaturePrefabs = Prefabs.Creatures;
-
-            foreach (var owned in _byOwner.Values)
-                owned.Zdos = owned.Creatures = owned.EventCreatures = 0;
-
-            foreach (var kv in _owners)
-            {
-                long owner = ZDOID.GetUserID(kv.Value);
-                if (owner == 0)
-                    continue;
-                if (!_byOwner.TryGetValue(owner, out var owned))
-                    _byOwner[owner] = owned = new Owned();
-                owned.Zdos++;
-
-                if (creaturePrefabs == null)
-                    continue;
-                var zdo = zdoman.GetZDO(kv.Key);
-                if (zdo == null || !creaturePrefabs.Contains(zdo.GetPrefab()))
-                    continue;
-                if (zdo.GetBool(ZDOVars.s_eventCreature, false))
-                    owned.EventCreatures++;
-                else
-                    owned.Creatures++;
-
-                _creatureOwner[kv.Key] = owner;
-                if (_lastCreatureOwner.TryGetValue(kv.Key, out var previous) && previous != owner)
-                {
-                    var player = Players.ForUid(owner);
-                    if (player != null)
-                        player.CreatureOwnerChanges++;
-                }
-            }
-            var swap = _lastCreatureOwner;
-            _lastCreatureOwner = _creatureOwner;
-            _creatureOwner = swap;
-            _creatureOwner.Clear();
-
-            _gone.Clear();
-            foreach (var kv in _byOwner)
-            {
-                if (kv.Value.Zdos == 0)
-                    _gone.Add(kv.Key);
-            }
-            foreach (var owner in _gone)
-                _byOwner.Remove(owner);
 
             w.Family("valheim_zdos", "gauge", "ZDOs no mundo.");
             w.Sample("valheim_zdos", zdoman.NrOfObjects());
+
+            w.Family("valheim_ownership_scan_passes_total", "counter", "Voltas completas da contagem de donos.");
+            w.Sample("valheim_ownership_scan_passes_total", Tally.Passes);
+            w.Family("valheim_ownership_scan_pass_seconds", "gauge", "Tempo de relogio da ultima volta (idade maxima da contagem).");
+            w.Sample("valheim_ownership_scan_pass_seconds", _lastPassSeconds);
+            w.Family("valheim_ownership_scan_work_seconds", "gauge", "Tempo de thread principal gasto na ultima volta, somando os frames.");
+            w.Sample("valheim_ownership_scan_work_seconds", _lastPassWork);
+            w.Family("valheim_ownership_scan_step_max_seconds", "gauge", "Maior fatia de um frame na ultima volta.");
+            w.Sample("valheim_ownership_scan_step_max_seconds", _lastPassStepMax);
+
+            // Sem volta completa ainda: melhor faltar a serie que mostrar zero falso.
+            if (Tally.Passes == 0)
+                return;
 
             w.Family("valheim_zdos_owned", "gauge", "ZDOs cujo dono e o jogador (o cliente dele simula).");
             foreach (var p in Players.Connected)
@@ -97,10 +128,10 @@ namespace ValheimMetrics.Collectors
             }
 
             long orphan = 0;
-            foreach (var kv in _byOwner)
+            foreach (var owner in Tally.Owners())
             {
-                if (Players.ForUid(kv.Key) == null)
-                    orphan += kv.Value.Zdos;
+                if (Players.ForUid(owner) == null)
+                    orphan += Tally.Of(owner).Zdos;
             }
             w.Family("valheim_zdos_owned_by_disconnected", "gauge", "ZDOs com dono que nao esta conectado.");
             w.Sample("valheim_zdos_owned_by_disconnected", orphan);
@@ -110,9 +141,7 @@ namespace ValheimMetrics.Collectors
                 w.Sample("valheim_creature_owner_changes_total", p.CreatureOwnerChanges, p.Labels);
         }
 
-        Owned Get(PlayerState p) =>
-            p.Peer != null && _byOwner.TryGetValue(p.Peer.m_uid, out var owned) ? owned : Empty;
-
-        static readonly Owned Empty = new Owned();
+        static OwnerCount Get(PlayerState p) =>
+            p.Peer != null ? Tally.Of(p.Peer.m_uid) : OwnerCount.Empty;
     }
 }
