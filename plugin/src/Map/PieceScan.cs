@@ -55,6 +55,18 @@ namespace ValheimMetrics.Map
 
         public bool TryGet(int prefab, out Shape shape) => _shapes.TryGetValue(prefab, out shape);
 
+        public List<CatalogEntry> Entries()
+        {
+            var list = new List<CatalogEntry>(_shapes.Count);
+            foreach (var kv in _shapes)
+                list.Add(new CatalogEntry
+                {
+                    Prefab = kv.Key, Kind = kv.Value.Kind, Crop = _crops.Contains(kv.Key),
+                    CenterX = kv.Value.CenterX, CenterZ = kv.Value.CenterZ, HalfX = kv.Value.HalfX, HalfZ = kv.Value.HalfZ,
+                });
+            return list;
+        }
+
         // Os maiores, para o log: collider grande demais denuncia area que nao e corpo da peca.
         public string Largest(int n)
         {

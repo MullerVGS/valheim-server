@@ -168,6 +168,43 @@ namespace ValheimMetrics.Map
         }
     }
 
+    // pieces-catalog.bin: forma de cada prefab de peca, para montar as construcoes de um save antigo
+    // fora do jogo (o save guarda prefab, posicao e giro; a forma vem dos colliders do prefab).
+    //   'VPK1' | u32 n | n x (i32 hash do prefab, u8 tipo, u8 planta, f32 centroX, f32 centroZ, f32 meiaX, f32 meiaZ)
+    // Planta = 1: entra sem criador (planta crescida nasce sem). Tipo = PieceKind.
+    public struct CatalogEntry
+    {
+        public int Prefab;
+        public PieceKind Kind;
+        public bool Crop;
+        public float CenterX;
+        public float CenterZ;
+        public float HalfX;
+        public float HalfZ;
+    }
+
+    public static class CatalogFile
+    {
+        public const string Name = "pieces-catalog.bin";
+        public const int RecordBytes = 22;
+
+        public static void Write(BinaryWriter w, IList<CatalogEntry> entries)
+        {
+            w.Write(new[] { (byte)'V', (byte)'P', (byte)'K', (byte)'1' });
+            w.Write((uint)entries.Count);
+            foreach (var e in entries)
+            {
+                w.Write(e.Prefab);
+                w.Write((byte)e.Kind);
+                w.Write(e.Crop ? (byte)1 : (byte)0);
+                w.Write(e.CenterX);
+                w.Write(e.CenterZ);
+                w.Write(e.HalfX);
+                w.Write(e.HalfZ);
+            }
+        }
+    }
+
     // float -> IEEE 754 meia precisao (o Mono do jogo nao tem System.Half). Arredonda para o mais
     // proximo; altura do mundo cabe com folga (+-65504, passo de 0,03 m a 60 m).
     public static class HalfFloat
