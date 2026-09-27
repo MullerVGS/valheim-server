@@ -11,6 +11,8 @@ const sheet = $('sheet');
 let g = null;
 let chests = [];
 let flash = null;
+let items = null;
+const popup = el('div', { class: 'card in-map', role: 'dialog', hidden: true });
 let state = null;
 let world = null;
 
@@ -18,6 +20,7 @@ const tile = (k, v, s) => el('div', { class: 'tile' }, el('div', { class: 'k', t
 const block = (title, ...children) => el('section', { class: 'block' }, el('h2', { text: title }), ...children);
 
 function drawOverlay(ctx, mv) {
+  placePopup(mv);
   if (!g) return;
   // Contorno da area da base, pontilhado como num mapa desenhado.
   const [ax, ay] = mv.toScreen(g.minX - BASE_MARGIN, g.maxZ + BASE_MARGIN);
@@ -71,7 +74,7 @@ function drawOverlay(ctx, mv) {
   ctx.shadowBlur = 0;
 }
 
-// Clique num bau do mapa leva ao cartao dele na lista.
+// Clique num bau do mapa abre o popup com o que tem dentro; clique fora fecha.
 function clickMap(mv, sx, sy) {
   let best = null;
   let bestD = 14;
@@ -83,20 +86,43 @@ function clickMap(mv, sx, sy) {
       best = c;
     }
   }
-  if (!best) return;
-  showChest(best, mv, false);
+  if (best) showChest(best, mv, false);
+  else closeChest(mv);
 }
 
 function showChest(c, mv, center) {
   flash = c;
   if (center) mv.goTo(c.x, c.z, Math.min(mv.view.metersPerPixel, 0.6));
+  const count = c.items.reduce((a, i) => a + i[1], 0);
+  popup.replaceChildren(
+    el('button', { class: 'card-close', type: 'button', 'aria-label': 'Fechar', text: '×', onclick: () => closeChest(mv) }),
+    el('header', {},
+      el('h3', { text: containerTitle(c) }),
+      el('p', { class: 'sub', text: `${c.label ? `${c.kind} · ` : ''}${c.owner ? `de ${c.owner}` : ''}` })),
+    c.items.length ? itemGrid(items, c.items, { limit: 40, px: 30 }) : el('p', { class: 'sub', text: 'Vazio.' }),
+    c.items.length ? el('p', { class: 'sub', text: `${fmt.format(count)} itens` }) : null,
+  );
+  popup.hidden = false;
   mv.invalidate();
-  for (const node of document.querySelectorAll('.chest.flash')) node.classList.remove('flash');
-  showAllChests();
-  const node = document.getElementById(`chest-${chests.indexOf(c)}`);
-  if (!node) return;
-  node.classList.add('flash');
-  if (!center) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function closeChest(mv) {
+  flash = null;
+  popup.hidden = true;
+  mv.invalidate();
+}
+
+// Acima do bau, dentro do mapa; se nao cabe, embaixo. No celular o CSS prende no rodape do mapa.
+function placePopup(mv) {
+  if (!flash || popup.hidden) return;
+  const [sx, sy] = mv.toScreen(flash.x, flash.z);
+  const w = popup.offsetWidth;
+  const h = popup.offsetHeight;
+  let x = sx - w / 2;
+  let y = sy - h - 16;
+  if (y < 8) y = sy + 18;
+  popup.style.left = `${Math.max(8, Math.min(mv.width - w - 8, x))}px`;
+  popup.style.top = `${Math.max(8, Math.min(mv.height - h - 8, y))}px`;
 }
 
 // Base grande tem centenas de baus: os primeiros abertos, o resto atras de um botao.
@@ -110,10 +136,6 @@ function chestList(nodes) {
     more.remove();
   });
   return el('div', {}, box, more);
-}
-
-function showAllChests() {
-  document.querySelector('.more-button')?.click();
 }
 
 function stockBlock(items) {
@@ -131,7 +153,7 @@ function stockBlock(items) {
 async function main() {
   const map = el('canvas', { id: 'map', 'aria-label': 'Mapa da base' });
   const overlay = el('canvas', { id: 'overlay', 'aria-hidden': 'true' });
-  const mapBox = el('div', { class: 'minimap' }, map, overlay, el('span', { class: 'map-note', text: 'clique num baú para ver o que tem dentro' }));
+  const mapBox = el('div', { class: 'minimap' }, map, overlay, popup, el('span', { class: 'map-note', text: 'clique num baú para ver o que tem dentro' }));
   // O mapa precisa estar na pagina para medir o canvas; o resto chega depois.
   sheet.replaceChildren(el('p', { class: 'page-msg', text: 'Carregando…' }), el('div', { hidden: true }, mapBox));
 
@@ -143,7 +165,6 @@ async function main() {
     onDraw: drawOverlay,
     onClick: (sx, sy) => clickMap(mapView, sx, sy),
   });
-  let items;
   try {
     [state, world, items] = await Promise.all([
       getJSON('api/state').catch(() => null),
@@ -218,6 +239,9 @@ async function main() {
       : null,
   );
   mapView.resize();
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeChest(mapView);
+  });
   mapView.fit(g.minX - BASE_MARGIN, g.minZ - BASE_MARGIN, g.maxX + BASE_MARGIN, g.maxZ + BASE_MARGIN, 30);
 
   try {
