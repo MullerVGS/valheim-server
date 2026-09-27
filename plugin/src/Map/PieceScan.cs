@@ -55,6 +55,21 @@ namespace ValheimMetrics.Map
 
         public bool TryGet(int prefab, out Shape shape) => _shapes.TryGetValue(prefab, out shape);
 
+        // Os maiores, para o log: collider grande demais denuncia area que nao e corpo da peca.
+        public string Largest(int n)
+        {
+            var names = new Dictionary<int, string>();
+            foreach (var prefab in ZNetScene.instance.m_prefabs)
+                if (prefab != null)
+                    names[prefab.name.GetStableHashCode()] = prefab.name;
+            var list = new List<KeyValuePair<int, Shape>>(_shapes);
+            list.Sort((a, b) => (b.Value.HalfX * b.Value.HalfZ).CompareTo(a.Value.HalfX * a.Value.HalfZ));
+            var parts = new List<string>();
+            for (int i = 0; i < list.Count && i < n; i++)
+                parts.Add($"{(names.TryGetValue(list[i].Key, out var name) ? name : list[i].Key.ToString())} {list[i].Value.HalfX * 2:0.#}x{list[i].Value.HalfZ * 2:0.#}");
+            return string.Join(", ", parts);
+        }
+
         // Planta crescida nasce sem criador: e a unica peca sem autor que entra no mapa.
         public bool IsCrop(int prefab) => _crops.Contains(prefab);
 
@@ -93,7 +108,8 @@ namespace ValheimMetrics.Map
             var toRoot = prefab.transform.worldToLocalMatrix;
             foreach (var col in prefab.GetComponentsInChildren<Collider>(true))
             {
-                if (col.isTrigger)
+                // EffectArea (area de base, fogo, sem-monstro) so vira trigger no Awake: no prefab parece solido.
+                if (col.isTrigger || col.GetComponent<EffectArea>() != null)
                     continue;
                 Vector3 center, size;
                 switch (col)

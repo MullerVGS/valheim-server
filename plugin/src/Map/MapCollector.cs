@@ -395,7 +395,7 @@ namespace ValheimMetrics.Map
             {
                 var sw = Stopwatch.StartNew();
                 _catalog = PieceCatalog.Build(ZNetScene.instance);
-                Plugin.Log.LogInfo($"Mapa: {_catalog.Count} prefabs de peca no catalogo ({sw.ElapsedMilliseconds} ms).");
+                Plugin.Log.LogInfo($"Mapa: {_catalog.Count} prefabs de peca no catalogo ({sw.ElapsedMilliseconds} ms); maiores: {_catalog.Largest(8)}.");
             }
             Directory.CreateDirectory(Dir);
             File.WriteAllText(Path.Combine(Dir, PendingFile), DateTime.Now.ToString("s", Inv));
