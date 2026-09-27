@@ -51,7 +51,8 @@ services:
       # pra existir um save da versao anterior se a nova quebrar algo.
       BACKUPS: "true"
       BACKUPS_CRON: ${BACKUPS_CRON:-0 7 * * *}
-      BACKUPS_MAX_AGE: "7"
+      # Dias de zip no servidor. O site guarda o ultimo zip de cada dia para sempre (site/archive).
+      BACKUPS_MAX_AGE: ${BACKUPS_MAX_AGE:-7}
 
       # Update: cliente Steam atualiza sozinho e versao diferente nao conecta,
       # entao ficar parado tambem quebra. Horario morto porque reinicia o servidor.
@@ -143,9 +144,15 @@ services:
       # Dados do plugin (VALHEIM_MAP_DIR); sem eles, explorado lido do save e terreno de site/data.
       MAP_DIR: ${VALHEIM_MAP_DIR:-/config/map}
       SAVE_DIR: /config/worlds_local/${WORLD_NAME}
+      # Historico: le os backups do servidor e guarda um zip e um retrato do mapa por dia.
+      BACKUPS_DIR: /config/backups
+      ARCHIVE_DIR: /app/archive
+      WORLD_NAME: ${WORLD_NAME}
     volumes:
       - config:/config:ro
       - ./site/data:/app/data:ro
+      # Precisa ser gravavel pelo uid 1000 (usuario node do container).
+      - ./site/archive:/app/archive
       - ./site/public/game:/app/public/game:ro
     # O jogo e single-thread e divide o host: o site nunca passa de meio nucleo.
     cpus: 0.5
