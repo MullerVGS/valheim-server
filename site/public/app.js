@@ -901,6 +901,18 @@ function bindPanel() {
       mapView.invalidate();
     });
   }
+  // Atalhos embaixo da busca: espelho das caixas do popup de camadas.
+  const quick = [...document.querySelectorAll('[data-quick]')];
+  const markQuick = () => quick.forEach((b) => b.setAttribute('aria-pressed', String(layers[b.dataset.quick])));
+  markQuick();
+  for (const b of quick) {
+    b.addEventListener('click', () => {
+      const box = document.querySelector(`#layers input[data-layer="${b.dataset.quick}"]`);
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event('change'));
+    });
+  }
+  for (const input of document.querySelectorAll('#layers input')) input.addEventListener('change', markQuick);
   const hourButtons = [...document.querySelectorAll('#trail-hours button')];
   const markHours = () => hourButtons.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.hours) === trailHours)));
   markHours();

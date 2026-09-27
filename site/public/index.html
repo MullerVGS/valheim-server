@@ -50,6 +50,15 @@
       <button id="search-clear" class="search-clear" type="button" aria-label="Limpar busca" hidden>×</button>
       <ul id="suggestions" class="suggestions" hidden></ul>
     </div>
+    <div class="quickbar" id="quickbar" role="toolbar" aria-label="Atalhos de camadas">
+      <button type="button" data-quick="pieces" aria-label="Construções"><span class="swatch" aria-hidden="true"></span></button>
+      <button type="button" data-quick="pins" aria-label="Ícones"><img src="game/icons/house.png" alt=""></button>
+      <button type="button" data-quick="labels" aria-label="Marcações"><svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s-7-7.2-7-12.2a7 7 0 0 1 14 0C19 14.8 12 22 12 22z"/><circle cx="12" cy="9.8" r="2.6"/></svg></button>
+      <button type="button" data-quick="players" aria-label="Jogadores"><img src="game/icons/player_32.png" alt=""></button>
+      <span class="quick-sep" aria-hidden="true"></span>
+      <button type="button" data-quick="portals" aria-label="Portais"><img src="game/icons/portal.png" alt=""></button>
+      <button type="button" data-quick="chests" aria-label="Baús (de perto)"><span class="chest-swatch" aria-hidden="true"></span></button>
+    </div>
     <div id="search-results" class="search-results" hidden></div>
   </div>
 
@@ -76,8 +85,8 @@
       <h2>No mapa</h2>
       <div class="layers" id="layers">
         <label><input type="checkbox" data-layer="pieces" checked> <span class="swatch" aria-hidden="true"></span> Construções</label>
-        <label><input type="checkbox" data-layer="pins" checked> <img src="game/icons/house.png" alt=""> Marcações</label>
-        <label><input type="checkbox" data-layer="labels" checked> <span class="aa">Aa</span> Nomes</label>
+        <label><input type="checkbox" data-layer="pins" checked> <img src="game/icons/house.png" alt=""> Ícones</label>
+        <label><input type="checkbox" data-layer="labels" checked> <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s-7-7.2-7-12.2a7 7 0 0 1 14 0C19 14.8 12 22 12 22z"/><circle cx="12" cy="9.8" r="2.6"/></svg> Marcações</label>
         <label><input type="checkbox" data-layer="players" checked> <img src="game/icons/player_32.png" alt=""> Jogadores</label>
         <label><input type="checkbox" data-layer="portals"> <img src="game/icons/portal.png" alt=""> Portais</label>
         <label><input type="checkbox" data-layer="beds"> <img src="game/icons/bed.png" alt=""> Camas</label>
