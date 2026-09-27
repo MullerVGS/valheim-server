@@ -34,8 +34,9 @@ namespace ValheimMetrics.Map
                 var plant = prefab != null ? prefab.GetComponent<Plant>() : null;
                 if (plant == null)
                     continue;
+                // Muda de arvore cresce no mesmo prefab das arvores nativas: sem criador, nao da para separar.
                 foreach (var grown in plant.m_grownPrefabs)
-                    if (grown != null)
+                    if (grown != null && grown.GetComponent<TreeBase>() == null)
                         catalog._crops.Add(grown.name.GetStableHashCode());
             }
             foreach (var prefab in scene.m_prefabs)
