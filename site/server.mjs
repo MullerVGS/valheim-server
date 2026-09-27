@@ -1,12 +1,12 @@
 // Site do servidor: mapa no estilo do jogo + metricas basicas. Sem dependencias.
-// Estatico em public/, terreno recortado pelo explorado do save (terrain.mjs) e /api/* com
+// Estatico em public/, dados do mapa recortados pelo explorado (terrain.mjs) e /api/* com
 // consultas fixas ao VictoriaMetrics (nada de PromQL vindo do navegador).
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadFullTerrain, maskTerrain, readExplored, saveSignature } from './terrain.mjs';
+import { MapData } from './terrain.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -15,8 +15,9 @@ const VM = (process.env.VM_URL || 'http://victoriametrics:8428').replace(/\/$/, 
 const PORT = Number(process.env.PORT || 8080);
 const STATE_TTL_MS = 5000;
 const HISTORY_TTL_MS = 60000;
+const MAP_DIR = process.env.MAP_DIR || null;
 const SAVE_DIR = process.env.SAVE_DIR || null;
-const SAVE_CHECK_MS = 60000;
+const MAP_CHECK_MS = 15000;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -132,87 +133,58 @@ function cached(ttl, build) {
   };
 }
 
-// Terreno recortado, refeito quando o autosave regrava a pasta do mundo.
-let terrain = null;
-let explored = null;
-let lastSignature = '';
+// Dados do mapa em memoria, refeitos quando os arquivos mudam no disco.
+const mapData = new MapData({ mapDir: MAP_DIR, dataDir: DATA, saveDir: SAVE_DIR });
 
-async function refreshTerrain(full) {
+async function refreshMap() {
   try {
-    const signature = await saveSignature(SAVE_DIR);
-    if (signature === lastSignature) return;
-    const t0 = performance.now();
-    const tables = await readExplored(SAVE_DIR, explored);
-    terrain = maskTerrain(full, explored);
-    lastSignature = signature;
-    console.log(`terreno: ${tables} mesas, ${terrain.pixels} px explorados, ${(terrain.gz.length / 1024).toFixed(0)} KiB em ${(performance.now() - t0).toFixed(0)} ms`);
+    await mapData.refresh();
   } catch (err) {
-    console.error('terreno:', err.message);
+    console.error('mapa:', err.message);
   }
 }
 
-async function startTerrain() {
-  if (!SAVE_DIR) return;
-  const full = await loadFullTerrain(join(DATA, 'terrain-full.bin'));
-  explored = new Uint8Array(full.n);
-  await refreshTerrain(full);
-  setInterval(() => refreshTerrain(full), SAVE_CHECK_MS).unref();
-}
-
-function sendTerrain(req, res) {
-  if (!terrain) return sendFile(req, res, join(DATA, 'terrain.bin'), { gzipSibling: true });
+function sendPacked(req, res, packed) {
+  if (!packed) return notFound(res);
   const headers = {
     'Content-Type': 'application/octet-stream',
     'Content-Encoding': 'gzip',
     'Cache-Control': 'no-cache',
-    ETag: terrain.etag,
+    ETag: packed.etag,
   };
-  if (req.headers['if-none-match'] === terrain.etag) {
+  if (req.headers['if-none-match'] === packed.etag) {
     res.writeHead(304, headers);
     return res.end();
   }
-  res.writeHead(200, { ...headers, 'Content-Length': terrain.gz.length });
-  res.end(terrain.gz);
+  res.writeHead(200, { ...headers, 'Content-Length': packed.gz.length });
+  res.end(packed.gz);
 }
 
 const state = cached(STATE_TTL_MS, buildState);
 const history = cached(HISTORY_TTL_MS, buildHistory);
 
 // Arquivo com revalidacao por ETag: o navegador pergunta sempre e so baixa o que mudou.
-async function sendFile(req, res, path, { gzipSibling = false } = {}) {
+async function sendFile(req, res, path) {
   let info;
-  let file = path;
-  let encoding = null;
-  if (gzipSibling && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
-    try {
-      info = await stat(path + '.gz');
-      file = path + '.gz';
-      encoding = 'gzip';
-    } catch {}
-  }
-  if (!info) {
-    try {
-      info = await stat(path);
-    } catch {
-      return notFound(res);
-    }
+  try {
+    info = await stat(path);
+  } catch {
+    return notFound(res);
   }
   if (!info.isFile()) return notFound(res);
-  const etag = `"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}${encoding ? '-gz' : ''}"`;
+  const etag = `"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`;
   const headers = {
     'Content-Type': TYPES[extname(path)] || 'application/octet-stream',
     'Cache-Control': 'no-cache',
     ETag: etag,
-    Vary: 'Accept-Encoding',
   };
-  if (encoding) headers['Content-Encoding'] = encoding;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, headers);
     return res.end();
   }
   headers['Content-Length'] = info.size;
   res.writeHead(200, headers);
-  createReadStream(file).pipe(res);
+  createReadStream(path).pipe(res);
 }
 
 function notFound(res) {
@@ -237,9 +209,8 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       return res.end('ok');
     }
-    if (url.pathname === '/data/terrain.bin') {
-      return sendTerrain(req, res);
-    }
+    if (url.pathname === '/data/terrain.bin') return sendPacked(req, res, mapData.terrain);
+    if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, mapData.pieces);
     const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
     const path = inside(PUBLIC, rel);
     if (!path) return notFound(res);
@@ -251,5 +222,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-await startTerrain();
-server.listen(PORT, () => console.log(`valheim-site em :${PORT} (victoria ${VM}, dados ${DATA}, save ${SAVE_DIR ?? '-'})`));
+await refreshMap();
+setInterval(refreshMap, MAP_CHECK_MS).unref();
+server.listen(PORT, () => console.log(`valheim-site em :${PORT} (victoria ${VM}, plugin ${MAP_DIR ?? '-'}, save ${SAVE_DIR ?? '-'})`));

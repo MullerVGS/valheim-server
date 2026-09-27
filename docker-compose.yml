@@ -102,13 +102,11 @@ services:
       # vezes menos (2..100), sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_FIRE_FUEL_FACTOR: ${VALHEIM_FIRE_FUEL_FACTOR:-}
 
-      # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin desenha os tiles do que as
-      # mesas de cartografia mostram. Vazio = sem tiles; as metricas de posicao saem igual. Ver README.
+      # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin grava os dados do site
+      # (terreno, explorado das mesas, construcoes). Vazio = sem arquivos; as metricas saem igual. Ver README.
       VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}
-      # Desenho diario dos tiles: horario, zoom maximo, fracao de nucleo e orcamento por frame. Vazio = padrao.
-      VALHEIM_MAP_DRAW_AT: ${VALHEIM_MAP_DRAW_AT:-}
-      VALHEIM_MAP_MAX_ZOOM: ${VALHEIM_MAP_MAX_ZOOM:-}
-      VALHEIM_MAP_DRAW_DUTY: ${VALHEIM_MAP_DRAW_DUTY:-}
+      # Construcoes: intervalo da varredura em minutos e orcamento por frame em ms. Vazio = padrao.
+      VALHEIM_MAP_PIECES_MINUTES: ${VALHEIM_MAP_PIECES_MINUTES:-}
       VALHEIM_MAP_SCAN_BUDGET_MS: ${VALHEIM_MAP_SCAN_BUDGET_MS:-}
 
     volumes:
@@ -131,9 +129,9 @@ services:
       - server:/opt/valheim:ro
       - config:/config
 
-  # Site com o mapa no estilo do jogo e metricas basicas (site/). Opcional, e nao encosta no jogo:
-  # le o save so para saber o que as mesas mostram e pega o resto no VictoriaMetrics.
-  # Antes: site/data/terrain-full.bin e site/public/game (ver site/README.md). Subir sem recriar o jogo:
+  # Site com o mapa no estilo do jogo e metricas basicas (site/). Opcional, e nao encosta no jogo: le
+  # os arquivos que o plugin grava (ou o save) e pega o resto no VictoriaMetrics.
+  # Antes: site/public/game (ver site/README.md). Subir sem recriar o jogo:
   #   docker compose --profile site up -d --no-deps site
   site:
     build: ./site
@@ -142,6 +140,8 @@ services:
     restart: unless-stopped
     environment:
       VM_URL: ${SITE_VM_URL:-http://victoriametrics:8428}
+      # Dados do plugin (VALHEIM_MAP_DIR); sem eles, explorado lido do save e terreno de site/data.
+      MAP_DIR: ${VALHEIM_MAP_DIR:-/config/map}
       SAVE_DIR: /config/worlds_local/${WORLD_NAME}
     volumes:
       - config:/config:ro
