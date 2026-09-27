@@ -119,7 +119,7 @@ def number(value):
     return text + "0" if text.endswith(".") else text
 
 
-def to_rich_text(image, units, material="", overlap=0.0, titled=False, label_style=""):
+def to_rich_text(image, units, material="", overlap=0.0, titled=False, label_style="", level=1.0):
     box = image.getchannel("A").getbbox()
     if box:
         image = image.crop(box)
@@ -153,9 +153,9 @@ def to_rich_text(image, units, material="", overlap=0.0, titled=False, label_sty
             parts.append("\n")
         x = 0
         while x < width:
-            key = color_key(px[x, y])
+            key = color_key(px[x, y], level)
             run = 1
-            while x + run < width and color_key(px[x + run, y]) == key:
+            while x + run < width and color_key(px[x + run, y], level) == key:
                 run += 1
             if key != current:
                 parts.append(f"<#{key}>")
@@ -166,10 +166,14 @@ def to_rich_text(image, units, material="", overlap=0.0, titled=False, label_sty
     return "".join(parts)
 
 
-def color_key(pixel):
+def color_key(pixel, level=1.0):
+    """A cor escrita no catalogo: a cor do jogo (12 bits) vezes `level`. Com level 1 sai em #rgb; abaixo
+    disso sai em 8 bits por canal, porque escurecida a paleta de 12 bits perde os tons."""
     if pixel[3] == 0:
         return "0000"
-    return "%x%x%x" % (pixel[0] // 17, pixel[1] // 17, pixel[2] // 17)
+    if level >= 1:
+        return "%x%x%x" % (pixel[0] // 17, pixel[1] // 17, pixel[2] // 17)
+    return "%02x%02x%02x" % tuple(int(c * level + 0.5) for c in pixel[:3])
 
 
 # ---------- folha padrao ----------
@@ -309,6 +313,8 @@ def main():
                         help="preset de material do jogo para os blocos; o padrao e sem iluminacao (icone visivel no escuro). Vazio = material da placa, iluminado pela cena")
     parser.add_argument("--brightness", type=float, default=0.7,
                         help="brilho padrao dos icones, aplicado pelo plugin (sem iluminacao, 1 estoura em bloom a noite; com --material vazio use 1)")
+    parser.add_argument("--level", type=float, default=0.5,
+                        help="cor escrita no catalogo = cor do jogo vezes isto (0 a 1); o plugin ainda aplica --brightness por cima, e o N%% da placa nao passa da cor escrita. Abaixo de 1 as cores saem em 8 bits por canal")
     parser.add_argument("--label-material", default=LABEL_MATERIAL,
                         help="preset de material do rotulo ('Madeira :wood:'); o padrao e sem iluminacao e com contorno. Vazio = texto normal da placa, que some no escuro")
     parser.add_argument("--label-color", default="bba", help="cor do rotulo em hex, quando ha --label-material")
@@ -316,6 +322,8 @@ def main():
     parser.add_argument("--languages", default="English,Portuguese_Brazilian", help="colunas de localizacao que viram apelido")
     parser.add_argument("--preview", help="pasta para gravar PNGs de conferencia")
     args = parser.parse_args()
+    if not 0 < args.level <= 1:
+        parser.error("--level tem que estar entre 0 e 1")
 
     manifest = read_manifest(args.game)
     icons, sprite_names = load_icons(args.game, manifest)
@@ -327,11 +335,11 @@ def main():
     label_style = f'<material="{args.label_material}"><#{args.label_color}>' if args.label_material else ""
 
     def render(icon_id, image):
-        # cores cheias no catalogo: quem escurece e o plugin (P brightness), que assim tambem atende
-        # o brilho pedido por placa (":wood 50%:") sem perder cor
+        # o catalogo guarda a cor do jogo vezes --level; quem escurece dai e o plugin (P brightness), que
+        # assim tambem atende o brilho pedido por placa (":wood 50%:") sem perder cor, ate a cor escrita
         small = quantize(shrink(image, args.px), args.colors)
-        texts[icon_id] = to_rich_text(small, args.units, args.material, args.overlap)
-        titled[icon_id] = to_rich_text(small, args.units, args.material, args.overlap, titled=True, label_style=label_style)
+        texts[icon_id] = to_rich_text(small, args.units, args.material, args.overlap, level=args.level)
+        titled[icon_id] = to_rich_text(small, args.units, args.material, args.overlap, titled=True, label_style=label_style, level=args.level)
         if args.preview:
             os.makedirs(args.preview, exist_ok=True)
             small.resize((small.width * 8, small.height * 8), Image.NEAREST).save(os.path.join(args.preview, icon_id + ".png"))
@@ -367,7 +375,7 @@ def main():
 
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(f"# valheim-server sign-icons v1 px={args.px} colors={args.colors} units={args.units:g} "
-                     f"material={args.material or '-'} brightness={args.brightness:g} overlap={args.overlap:g}\n")
+                     f"material={args.material or '-'} brightness={args.brightness:g} level={args.level:g} overlap={args.overlap:g}\n")
         handle.write("D\tweed\n")
         # o plugin refaz o cabecalho quando o jogador pede outro tamanho (<size=N>:wood:): precisa do
         # lado padrao e do extra do Bold nos dois regimes do auto-size (cabe na tabua / nao cabe)
