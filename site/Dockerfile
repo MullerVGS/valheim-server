@@ -1,6 +1,6 @@
 FROM node:22-alpine
 WORKDIR /app
-COPY server.mjs terrain.mjs saves.mjs archive.mjs ./
+COPY server.mjs terrain.mjs saves.mjs archive.mjs world.mjs ./
 COPY public ./public
 USER node
 ENV PORT=8080 DATA_DIR=/app/data

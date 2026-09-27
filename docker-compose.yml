@@ -154,9 +154,10 @@ services:
       # Precisa ser gravavel pelo uid 1000 (usuario node do container).
       - ./site/archive:/app/archive
       - ./site/public/game:/app/public/game:ro
-    # O jogo e single-thread e divide o host: o site nunca passa de meio nucleo.
+    # O jogo e single-thread e divide o host: o site nunca passa de meio nucleo. A leitura do save (baus
+    # para as paginas, ~150 MB de pico) pode cruzar com o retrato diario do historico.
     cpus: 0.5
-    mem_limit: 256m
+    mem_limit: 384m
 
 volumes:
   config:
