@@ -40,6 +40,9 @@ function emptyPieces() {
   return b;
 }
 
+const AMBIENT_MS = 1000 / 12;
+const AMBIENT_UNFOCUSED_MS = 1000 / 2;
+
 export class MapView {
   constructor({ map, overlay, view, icons = [], onDraw, onHover, onClick, onChange }) {
     this.map = map;
@@ -58,6 +61,7 @@ export class MapView {
     this.pieces = null;
     this.settlements = null;
     this.dirty = true;
+    this.lastDraw = -Infinity;
     this.flight = null;
     this.resize = this.resize.bind(this);
     this.resize();
@@ -199,8 +203,12 @@ export class MapView {
     map.addEventListener('dblclick', (e) => this.zoomAt(...this.local(e), 0.5));
   }
 
+  // Agua e nuvens so pedem poucos quadros: a toda velocidade apenas quando a vista muda. Um mapa
+  // parado a 60 quadros e uma GPU (ou CPU, sem aceleracao) inteira para um desenho quase fixo.
   frame(now) {
-    if (this.renderer) {
+    const ambient = document.hasFocus() ? AMBIENT_MS : AMBIENT_UNFOCUSED_MS;
+    if (this.renderer && (this.dirty || now - this.lastDraw >= ambient)) {
+      this.lastDraw = now;
       const t = now / 1000;
       this.renderer.draw(this.view, { ...DAY, cloudOffset: [t * 0.0012, 0, t * 0.0007] }, t);
     }
@@ -216,6 +224,7 @@ export class MapView {
 
   set showPieces(on) {
     if (this.renderer) this.renderer.showPieces = on;
+    this.dirty = true;
   }
 
   // Arte, icones e o mundo de agora. Lanca erro se o WebGL2 ou o terreno faltarem.
