@@ -22,6 +22,7 @@
     <Compile Include="../src/Chests/Reconciler.cs" />
     <Compile Include="../src/Chests/ChestItems.cs" />
     <Compile Include="../src/Chests/ChestKeeper.cs" />
+    <Compile Include="../src/Traffic/TrafficBook.cs" />
   </ItemGroup>
 
   <ItemGroup>

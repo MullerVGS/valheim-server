@@ -79,6 +79,8 @@ container, sem publicar no host. Nao muda nada pro jogador nem desliga achieveme
 - servidor: FPS (o jogo mira 30), tempo de frame, tempo por subsistema, save, desconexoes, GC;
 - raid ativa, rodando ou pausada, e quem esta no raio;
 - RPC por metodo (recebido, enviado, roteado).
+- banda de ZDO por prefab (`valheim_zdo_traffic_bytes_total`, enviado e recebido) e, a cada 5 min no log
+  (`Trafego de ZDO`), os 10 objetos e as 5 zonas de 64 m mais caros, com posicao e dono.
 
 ```sh
 # 1. BEPINEX=true no .env e subir: o boot baixa o BepInExPack pro volume
