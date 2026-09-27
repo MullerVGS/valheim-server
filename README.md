@@ -20,9 +20,9 @@ docker compose logs -f
 - RAM: ~3-4 GB vanilla c/ mundo maduro. `MEM_LIMIT` existe pra nao derrubar vizinho de host.
 - `SERVER_PASS`: min 5 chars, nao pode estar contido no `SERVER_NAME`.
 - Mods (BepInEx) passam de 8 GB. Nao cabem em host compartilhado.
-- Tres crons diarios, nao dois: alem do backup e do update declarados no compose, a
-  imagem cria um **restart as 05:10** por default proprio, sem variavel no ambiente.
-  E gateado por `valheim-is-idle`, entao nao derruba ninguem conectado.
+- Tres crons diarios: backup (`BACKUPS_CRON`), update (`UPDATE_CRON`) e restart
+  (`RESTART_CRON`, 05:10 por default da imagem). O restart e gateado por `valheim-is-idle`:
+  nao derruba ninguem conectado, mas tambem nao roda se houver gente online no horario.
 
 ## World Modifiers
 

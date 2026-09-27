@@ -57,6 +57,10 @@ services:
       # entao ficar parado tambem quebra. Horario morto porque reinicia o servidor.
       UPDATE_CRON: ${UPDATE_CRON:-0 8 * * *}
 
+      # Restart diario: so roda se ninguem estiver conectado (valheim-is-idle).
+      # Mesmo default da imagem; escolha um horario em que o servidor costuma estar vazio.
+      RESTART_CRON: ${RESTART_CRON:-10 5 * * *}
+
       # BepInEx, so para carregar o plugin de metricas (plugin/). Opt-in.
       # A imagem baixa o BepInExPack `latest` do Thunderstore no boot e em cada update.
       BEPINEX: ${BEPINEX:-false}
