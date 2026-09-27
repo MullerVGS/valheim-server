@@ -111,48 +111,4 @@ namespace ValheimMetrics.Map
             return new SharedMap(explored, pins);
         }
     }
-
-    // A mascara que os tiles no disco representam, para o proximo desenho so rever o que mudou.
-    public static class MaskFile
-    {
-        public static bool[] Load(string path)
-        {
-            if (!File.Exists(path))
-                return null;
-            try
-            {
-                using (var input = File.OpenRead(path))
-                using (var gzip = new GZipStream(input, CompressionMode.Decompress))
-                using (var output = new MemoryStream())
-                {
-                    gzip.CopyTo(output);
-                    var bytes = output.ToArray();
-                    if (bytes.Length != SharedMap.Size * SharedMap.Size)
-                        return null;
-                    var mask = new bool[bytes.Length];
-                    for (int i = 0; i < bytes.Length; i++)
-                        mask[i] = bytes[i] != 0;
-                    return mask;
-                }
-            }
-            catch (InvalidDataException)
-            {
-                return null;
-            }
-        }
-
-        public static void Save(string path, bool[] mask)
-        {
-            var bytes = new byte[mask.Length];
-            for (int i = 0; i < mask.Length; i++)
-                bytes[i] = mask[i] ? (byte)1 : (byte)0;
-            var tmp = path + ".tmp";
-            using (var output = File.Create(tmp))
-            using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
-                gzip.Write(bytes, 0, bytes.Length);
-            if (File.Exists(path))
-                File.Delete(path);
-            File.Move(tmp, path);
-        }
-    }
 }

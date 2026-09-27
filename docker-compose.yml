@@ -101,6 +101,11 @@ services:
       # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin desenha os tiles do que as
       # mesas de cartografia mostram. Vazio = sem tiles; as metricas de posicao saem igual. Ver README.
       VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}
+      # Desenho diario dos tiles: horario, zoom maximo, fracao de nucleo e orcamento por frame. Vazio = padrao.
+      VALHEIM_MAP_DRAW_AT: ${VALHEIM_MAP_DRAW_AT:-}
+      VALHEIM_MAP_MAX_ZOOM: ${VALHEIM_MAP_MAX_ZOOM:-}
+      VALHEIM_MAP_DRAW_DUTY: ${VALHEIM_MAP_DRAW_DUTY:-}
+      VALHEIM_MAP_SCAN_BUDGET_MS: ${VALHEIM_MAP_SCAN_BUDGET_MS:-}
 
     volumes:
       # config = mundos, listas, backups. E o que importa.

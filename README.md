@@ -284,11 +284,21 @@ no zoom 11; perto do Equador o Mercator e linear (0,3 m de erro na borda do mund
   `connected`, `target` e `distance_m` (o par do TeleportWorld); zona com `top` (os 3 prefabs que mais pesam).
 - **Sem spoiler**: pins e calor de ZDO so do que as mesas de cartografia mostram (uniao de todas as mesas,
   relida a cada minuto). Jogador, morte e lag aparecem onde acontecem.
-- **Fundo** (`VALHEIM_MAP_DIR=/config/map`): o plugin desenha `tiles/{z}/{x}/{y}.png` (zoom 9 a 15, 0,75 m/px) com o
-  gerador de mundo do proprio servidor, transparente fora do explorado. Roda numa thread de baixa
-  prioridade e so redesenha os tiles que a mesa mudou (`explored.gz` guarda o que esta no disco; apagar
-  `tiles/` redesenha tudo, ~2 min; `style.txt` diferente de `TilePainter.Style` tambem). Terreno e o gerado:
-  construcao e terra mexida nao aparecem.
+- **Fundo** (`VALHEIM_MAP_DIR=/config/map`): o plugin desenha `tiles/{z}/{x}/{y}.png` (zoom 9 a 17, 0,19 m/px no
+  17) com o gerador de mundo do proprio servidor, transparente fora do explorado, e as **construcoes por cima**:
+  cada peca com criador (e planta crescida) vira o retangulo dos colliders do prefab, girado pelo ZDO, na cor do
+  material (madeira, madeira nobre, madeira de Yggdrasil, pedra, marmore, grausten, ferro, antigo, gelo), com
+  moveis/estacoes, plantacao e barco em cores proprias. O mais alto cobre o mais baixo (telhado por cima do
+  piso). Peca so a partir do zoom 13. Terra mexida ainda nao aparece.
+- **Desenho uma vez por dia**, pensado para nao pesar no jogo: a varredura das pecas roda na thread principal
+  aos pedacos (`VALHEIM_MAP_SCAN_BUDGET_MS` por frame, padrao 1) e o desenho numa thread de prioridade minima que
+  dorme na proporcao do trabalho (`VALHEIM_MAP_DRAW_DUTY`, padrao 0.5 = meio nucleo, o dobro do tempo). Horario em
+  `VALHEIM_MAP_DRAW_AT` (`HH:MM`, hora do container, padrao 04:30); zoom maximo em `VALHEIM_MAP_MAX_ZOOM` (11 a 18,
+  padrao 17; cada zoom a mais ~4x tiles e tempo). So redesenha tile cuja assinatura mudou (estilo, pixels da mesa
+  que ele alcanca, pecas dentro dele), guardada em `tiles.book`. Pedir um desenho fora de hora: criar
+  `draw.now` na pasta; `draw.pending` marca desenho interrompido e ele e retomado no boot seguinte.
+  Custo em `valheim_map_draw_*` (tempo por fase, tiles por resultado, GC no periodo, pior tile) e
+  `valheim_map_piece_scan_*` (tempo e pior frame na thread principal); `valheim_map_pieces{kind}` conta as pecas.
   `players.tsv` guarda SteamID -> nome para o autor dos pins.
 - **Servir os tiles**: o navegador busca direto, entao eles precisam estar na mesma origem do Grafana, por
   exemplo montando `map/tiles` do volume em `public/img/valheim-map` do Grafana e usando

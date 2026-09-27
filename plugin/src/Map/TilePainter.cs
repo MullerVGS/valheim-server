@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 
 namespace ValheimMetrics.Map
 {
@@ -30,14 +29,31 @@ namespace ValheimMetrics.Map
         public override int GetHashCode() => (Zoom * 7919 + X) * 7919 + Y;
     }
 
+    // Buffers de um tile, reaproveitados de tile em tile: no Mono do servidor cada alocacao grande
+    // vira coleta de lixo, e a coleta para o jogo inteiro.
+    public sealed class TileCanvas
+    {
+        public const int G = MapProjection.TileSize + 2;
+        public readonly float[] Alpha = new float[G * G];
+        public readonly double[] Xs = new double[G * G];
+        public readonly double[] Zs = new double[G * G];
+        public readonly bool[] Need = new bool[G * G];
+        public readonly float[] Height = new float[G * G];
+        public readonly int[] Biome = new int[G * G];
+        public readonly bool[] Forest = new bool[G * G];
+        public readonly byte[] Rgba = new byte[MapProjection.TileSize * MapProjection.TileSize * 4];
+        public readonly List<int> Scratch = new List<int>();
+    }
+
     // Pinta um tile XYZ com o terreno so onde a mesa ja mostra; o resto fica transparente, sem spoiler.
     // A borda do explorado sai da interpolacao bilinear da mascara de 12 m, entao nao aparece a escada.
+    // As pecas construidas vao por cima (PieceLayer).
     public static class TilePainter
     {
         public const int MinZoom = 9;
-        public const int MaxZoom = 15;
-        // Muda quando o desenho muda: tiles de outro estilo sao redesenhados todos.
-        public const int Style = 2;
+        public const int MaxZoom = 17;
+        // Muda quando o desenho muda: entra na assinatura de todo tile, entao tudo e redesenhado.
+        public const int Style = 3;
         const int N = MapProjection.TileSize;
         const float WaterLevel = 30f;
 
@@ -47,7 +63,7 @@ namespace ValheimMetrics.Map
 
         // Tiles que um conjunto de pixels de mapa alcanca em todos os zooms (com 1 pixel de folga,
         // porque a borda interpolada invade o vizinho).
-        public static HashSet<TileId> TilesTouching(IEnumerable<int> pixels)
+        public static HashSet<TileId> TilesTouching(IEnumerable<int> pixels, int maxZoom = MaxZoom)
         {
             var tiles = new HashSet<TileId>();
             var half = SharedMap.Size / 2;
@@ -56,7 +72,7 @@ namespace ValheimMetrics.Map
                 int j = p % SharedMap.Size, i = p / SharedMap.Size;
                 double x0 = (j - half - 1) * SharedMap.PixelSize, x1 = (j - half + 2) * SharedMap.PixelSize;
                 double z0 = (i - half - 1) * SharedMap.PixelSize, z1 = (i - half + 2) * SharedMap.PixelSize;
-                for (int zoom = MinZoom; zoom <= MaxZoom; zoom++)
+                for (int zoom = MinZoom; zoom <= maxZoom; zoom++)
                 {
                     MapProjection.TileRange(zoom, x0, z0, x1, z1, out var tx0, out var ty0, out var tx1, out var ty1);
                     for (int ty = ty0; ty <= ty1; ty++)
@@ -77,37 +93,49 @@ namespace ValheimMetrics.Map
             return changed;
         }
 
-        // Grava ou apaga cada tile. Devolve quantos ficaram com desenho.
-        public static int Render(IEnumerable<TileId> tiles, bool[] explored, ITerrain terrain, string root)
+        // Retangulo de mundo do tile.
+        public static void Bounds(TileId tile, out double x0, out double z0, out double x1, out double z1)
         {
-            int drawn = 0;
-            foreach (var tile in tiles)
-            {
-                var path = tile.Path(root);
-                var rgba = Paint(tile, explored, terrain);
-                if (rgba == null)
-                {
-                    if (File.Exists(path))
-                        File.Delete(path);
-                    continue;
-                }
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                var tmp = path + ".tmp";
-                File.WriteAllBytes(tmp, Png.Encode(N, N, rgba));
-                if (File.Exists(path))
-                    File.Delete(path);
-                File.Move(tmp, path);
-                drawn++;
-            }
-            return drawn;
+            MapProjection.ToWorld(tile.Zoom, tile.X * N, (tile.Y + 1) * N, out x0, out z0);
+            MapProjection.ToWorld(tile.Zoom, (tile.X + 1) * N, tile.Y * N, out x1, out z1);
         }
 
-        public static byte[] Paint(TileId tile, bool[] explored, ITerrain terrain)
+        // Tudo que muda o desenho do tile: estilo, pixels da mascara que ele alcanca (com a folga da
+        // interpolacao) e, do zoom das pecas para cima, as pecas dentro dele.
+        public static ulong Signature(TileId tile, bool[] explored, PieceLayer pieces, List<int> scratch)
         {
-            const int G = N + 2;
-            var alpha = new float[G * G];
-            var xs = new double[G * G];
-            var zs = new double[G * G];
+            Bounds(tile, out var x0, out var z0, out var x1, out var z1);
+            ulong h = PieceMark.Mix(1469598103934665603UL, Style);
+            int half = SharedMap.Size / 2;
+            int j0 = Math.Max(0, (int)Math.Floor(x0 / SharedMap.PixelSize) + half - 1);
+            int j1 = Math.Min(SharedMap.Size - 1, (int)Math.Floor(x1 / SharedMap.PixelSize) + half + 1);
+            int i0 = Math.Max(0, (int)Math.Floor(z0 / SharedMap.PixelSize) + half - 1);
+            int i1 = Math.Min(SharedMap.Size - 1, (int)Math.Floor(z1 / SharedMap.PixelSize) + half + 1);
+            unchecked
+            {
+                for (int i = i0; i <= i1; i++)
+                    for (int j = j0; j <= j1; j++)
+                        if (explored[i * SharedMap.Size + j])
+                            h = PieceMark.Mix(h, (ulong)(i * SharedMap.Size + j));
+            }
+            if (pieces != null && tile.Zoom >= PieceLayer.MinZoom)
+                h = PieceMark.Mix(h, pieces.Signature(x0, z0, x1, z1, scratch));
+            return h;
+        }
+
+        // Para teste e uso avulso: canvas proprio, devolve o RGBA ou null se o tile fica vazio.
+        public static byte[] Paint(TileId tile, bool[] explored, ITerrain terrain, PieceLayer pieces = null)
+        {
+            var canvas = new TileCanvas();
+            return Paint(tile, explored, terrain, pieces, canvas) ? canvas.Rgba : null;
+        }
+
+        public static bool Paint(TileId tile, bool[] explored, ITerrain terrain, PieceLayer pieces, TileCanvas canvas)
+        {
+            const int G = TileCanvas.G;
+            var alpha = canvas.Alpha;
+            var xs = canvas.Xs;
+            var zs = canvas.Zs;
             bool any = false;
             for (int r = 0; r < G; r++)
             {
@@ -121,9 +149,10 @@ namespace ValheimMetrics.Map
                 }
             }
             if (!any)
-                return null;
+                return false;
 
-            var need = new bool[G * G];
+            var need = canvas.Need;
+            Array.Clear(need, 0, need.Length);
             for (int r = 1; r <= N; r++)
                 for (int c = 1; c <= N; c++)
                     if (alpha[r * G + c] > 0)
@@ -132,15 +161,16 @@ namespace ValheimMetrics.Map
                         need[k] = need[k - 1] = need[k + 1] = need[k - G] = need[k + G] = true;
                     }
 
-            var height = new float[G * G];
-            var biome = new int[G * G];
-            var forest = new bool[G * G];
+            var height = canvas.Height;
+            var biome = canvas.Biome;
+            var forest = canvas.Forest;
             for (int k = 0; k < G * G; k++)
                 if (need[k])
                     terrain.Sample(xs[k], zs[k], out biome[k], out height[k], out forest[k]);
 
             double mpp = SharedMap.PixelSize * Math.Pow(2, MapProjection.NativeZoom - tile.Zoom);
-            var rgba = new byte[N * N * 4];
+            var rgba = canvas.Rgba;
+            Array.Clear(rgba, 0, rgba.Length);
             for (int r = 1; r <= N; r++)
             {
                 for (int c = 1; c <= N; c++)
@@ -161,7 +191,8 @@ namespace ValheimMetrics.Map
                     rgba[o + 3] = (byte)Math.Round(a * a * (3 - 2 * a) * 255);
                 }
             }
-            return rgba;
+            pieces?.Draw(tile, rgba, canvas.Scratch);
+            return true;
         }
 
         // Fracao explorada no ponto, interpolando os centros dos pixels de 12 m.

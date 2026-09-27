@@ -12,12 +12,16 @@ namespace ValheimMetrics.Map
         static readonly byte[] Signature = { 137, 80, 78, 71, 13, 10, 26, 10 };
         static readonly uint[] CrcTable = BuildCrcTable();
 
-        public static byte[] Encode(int width, int height, byte[] rgba)
+        public static byte[] Encode(int width, int height, byte[] rgba) => Encode(width, height, rgba, null);
+
+        // raw: buffer reaproveitavel das linhas com o byte de filtro (altura x (largura x 4 + 1)).
+        public static byte[] Encode(int width, int height, byte[] rgba, byte[] raw)
         {
             if (rgba.Length != width * height * 4)
                 throw new ArgumentException("rgba nao bate com a dimensao");
 
-            var raw = new byte[height * (width * 4 + 1)];
+            if (raw == null || raw.Length != height * (width * 4 + 1))
+                raw = new byte[height * (width * 4 + 1)];
             for (int y = 0; y < height; y++)
             {
                 int row = y * (width * 4 + 1);

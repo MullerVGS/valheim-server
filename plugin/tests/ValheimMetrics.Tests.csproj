@@ -29,6 +29,8 @@
     <Compile Include="../src/Map/Png.cs" />
     <Compile Include="../src/Map/TilePainter.cs" />
     <Compile Include="../src/Map/MapText.cs" />
+    <Compile Include="../src/Map/PieceLayer.cs" />
+    <Compile Include="../src/Map/MapRender.cs" />
   </ItemGroup>
 
   <ItemGroup>
