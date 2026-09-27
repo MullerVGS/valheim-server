@@ -304,8 +304,9 @@ namespace ValheimMetrics.Collectors
             try
             {
                 pkg.SetPos(0);
+                Vector3? shoutPos = null;
                 if (shout)
-                    pkg.ReadVector3();
+                    shoutPos = pkg.ReadVector3();
                 pkg.ReadInt();
                 var name = pkg.ReadString();
                 pkg.ReadString();
@@ -320,6 +321,9 @@ namespace ValheimMetrics.Collectors
                     player.LagReports++;
                 else
                     _lagReportsUnknown++;
+                var where = shoutPos ?? player?.Peer?.m_refPos;
+                if (where.HasValue)
+                    Map.MapCollector.OnLagReport(player, where.Value);
                 Plugin.Log.LogInfo($"Reclamacao de lag: {player?.Name ?? name} ({who}): \"{text}\"");
             }
             finally

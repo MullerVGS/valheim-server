@@ -24,6 +24,10 @@
     <Compile Include="../src/Chests/ChestItems.cs" />
     <Compile Include="../src/Chests/ChestKeeper.cs" />
     <Compile Include="../src/Traffic/TrafficBook.cs" />
+    <Compile Include="../src/Map/SharedMap.cs" />
+    <Compile Include="../src/Map/MapProjection.cs" />
+    <Compile Include="../src/Map/Png.cs" />
+    <Compile Include="../src/Map/TilePainter.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,17 +13,21 @@ namespace ValheimMetrics.Traffic
     // ZDO por jogador que o recebe, num pacote limpo; o cabecalho fixo em volta (id, revisoes, dono,
     // posicao, tamanho) soma 42 bytes. Recebido: ZDO.Deserialize so roda para revisao aceita de dono;
     // o tamanho e lido antes e o prefab depois, porque ZDO novo so ganha prefab dentro do Deserialize.
-    // Por prefab vira contador; os ZDOs e as zonas de 64 m mais caros de cada janela vao para o log.
+    // Por prefab vira contador; os ZDOs e as zonas de 64 m mais caros de cada janela vao para o log, e
+    // as zonas da ultima janela fechada viram gauge com o centro em x/z (calor no mapa do Grafana).
     sealed class TrafficCollector : ICollector
     {
         const int HeaderBytes = 12 + 2 + 4 + 8 + 12 + 4;
         const double WindowSeconds = 300;
         const int TopZdos = 10;
         const int TopZones = 5;
+        const int ExportedZones = 100;
 
         static readonly TrafficBook Book = new TrafficBook();
         static readonly Dictionary<int, string> Names = new Dictionary<int, string>();
         static double _windowStart = -1;
+        static List<HotZone> _lastZones = new List<HotZone>();
+        static double _lastSeconds = 1;
 
         public string Name => "zdo_traffic";
 
@@ -77,7 +81,10 @@ namespace ValheimMetrics.Traffic
                 _windowStart = now;
             else if (now - _windowStart >= WindowSeconds)
             {
-                LogWindow(Book.Take(TopZdos, TopZones), now - _windowStart);
+                var window = Book.Take(TopZdos, ExportedZones);
+                _lastZones = window.TopZones;
+                _lastSeconds = now - _windowStart;
+                LogWindow(window, _lastSeconds);
                 _windowStart = now;
             }
 
@@ -98,6 +105,12 @@ namespace ValheimMetrics.Traffic
             }
             w.Family("valheim_zdo_traffic_window_zdos", "gauge", "ZDOs distintos que passaram pela rede na janela atual.");
             w.Sample("valheim_zdo_traffic_window_zdos", Book.WindowZdos);
+
+            w.Family("valheim_zone_traffic_bytes_per_second", "gauge",
+                "Bytes de ZDO por segundo (enviado + recebido) na zona de 64 m, media da ultima janela de 5 min; so as mais caras.");
+            foreach (var zone in _lastZones)
+                w.Sample("valheim_zone_traffic_bytes_per_second", zone.Tally.Bytes / _lastSeconds,
+                    Map.MapProjection.Labels(zone.Zone.CenterX, zone.Zone.CenterZ));
         }
 
         static void LogWindow(TrafficBook.Window window, double seconds)
@@ -114,8 +127,9 @@ namespace ValheimMetrics.Traffic
                     NameOf(hot.Prefab), hot.X, hot.Z, OwnerName(hot.Owner), hot.Tally.Bytes / 1024.0 / seconds,
                     hot.Tally.SentUpdates, hot.Tally.ReceivedUpdates));
             sb.Append("\n  Zonas de 64 m mais caras:");
-            foreach (var zone in window.TopZones)
+            for (int z = 0; z < window.TopZones.Count && z < TopZones; z++)
             {
+                var zone = window.TopZones[z];
                 var prefabs = new List<KeyValuePair<int, long>>(zone.BytesByPrefab);
                 prefabs.Sort((a, b) => b.Value.CompareTo(a.Value));
                 var parts = new List<string>();

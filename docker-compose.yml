@@ -98,6 +98,10 @@ services:
       # marcado quando o bau fecha. Marcar exige o mod de cliente; o resto do grupo joga vanilla. Ver README.
       VALHEIM_SLOT_MARKS: ${VALHEIM_SLOT_MARKS:-}
 
+      # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin desenha os tiles do que as
+      # mesas de cartografia mostram. Vazio = sem tiles; as metricas de posicao saem igual. Ver README.
+      VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}
+
     volumes:
       # config = mundos, listas, backups. E o que importa.
       - config:/config

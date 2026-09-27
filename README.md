@@ -81,6 +81,8 @@ container, sem publicar no host. Nao muda nada pro jogador nem desliga achieveme
 - RPC por metodo (recebido, enviado, roteado).
 - banda de ZDO por prefab (`valheim_zdo_traffic_bytes_total`, enviado e recebido) e, a cada 5 min no log
   (`Trafego de ZDO`), os 10 objetos e as 5 zonas de 64 m mais caros, com posicao e dono.
+- posicao: jogadores, pins das mesas de cartografia, portais, camas, mortes, reclamacoes de lag e
+  ZDOs/banda por zona de 64 m, com `x`/`z` em metros e `lat`/`lon` para o Geomap (ver Mapa).
 
 ```sh
 # 1. BEPINEX=true no .env e subir: o boot baixa o BepInExPack pro volume
@@ -265,6 +267,29 @@ porque so pede um item de mesmo nome com espaco.
 - Para cliente vanilla a pilha de zero e item comum: arrastar ou "Pegar tudo" leva um item `0` para o
   inventario, que nao cai no chao e some no proximo place stacks.
 - Formato de item diferente de 108..109 (update do jogo) nao e mexido: conta em `valheim_slot_marks_skipped_total`.
+
+### Mapa (opt-in)
+
+O Geomap do Grafana desenha pontos sobre tiles XYZ em Web Mercator, e o plugin fala essa lingua: o
+mundo vira um quadrado de 1,40625 grau em volta de (0, 0), com 1 grau = 17476,27 m (`lon = x / 17476,27`,
+`lat = z / 17476,27`, norte = +z). O numero faz o mapa da mesa (2048 px de 12 m) cair exato em 8x8 tiles
+no zoom 11; perto do Equador o Mercator e linear (0,3 m de erro na borda do mundo).
+
+- **Metricas** (sempre): `valheim_player_position_meters{axis}`, `valheim_map_pin_info`,
+  `valheim_portal_info`, `valheim_bed_info`, `valheim_map_table_info`, `valheim_player_deaths_total`
+  (tumulo novo), `valheim_lag_reports_by_zone_total`, `valheim_zone_zdos` (300 zonas mais cheias) e
+  `valheim_zone_traffic_bytes_per_second` (100 mais caras da ultima janela de 5 min). Tudo que tem lugar fixo
+  leva `x`, `z`, `lat` e `lon`; a posicao do jogador divide por 17476,27 na consulta.
+- **Sem spoiler**: pins e calor de ZDO so do que as mesas de cartografia mostram (uniao de todas as mesas,
+  relida a cada minuto). Jogador, morte e lag aparecem onde acontecem.
+- **Fundo** (`VALHEIM_MAP_DIR=/config/map`): o plugin desenha `tiles/{z}/{x}/{y}.png` (zoom 9 a 14) com o
+  gerador de mundo do proprio servidor, transparente fora do explorado. Roda numa thread de baixa
+  prioridade e so redesenha os tiles que a mesa mudou (`explored.gz` guarda o que esta no disco; apagar
+  `tiles/` redesenha tudo, ~1 min). Terreno e o gerado: construcao e terra mexida nao aparecem.
+  `players.tsv` guarda SteamID -> nome para o autor dos pins.
+- **Servir os tiles**: o navegador busca direto, entao eles precisam estar na mesma origem do Grafana, por
+  exemplo montando `map/tiles` do volume em `public/img/valheim-map` do Grafana e usando
+  `/public/img/valheim-map/{z}/{x}/{y}.png` como camada XYZ.
 
 ## Dados
 
