@@ -220,7 +220,7 @@ namespace ValheimMetrics.Map
 
         static void Refresh()
         {
-            _portals = Describe(Portals, zdo => new[] { "tag", zdo.GetString(ZDOVars.s_tag), "prefab", PrefabName(zdo.GetPrefab()) });
+            _portals = Describe(Portals, DescribePortal);
             _beds = Describe(Beds, zdo => new[] { "owner", zdo.GetString(ZDOVars.s_ownerName) });
             _tables = Describe(Tables, zdo => new string[0]);
             _zones = CountZones();
@@ -233,6 +233,28 @@ namespace ValheimMetrics.Map
                     data.Add(bytes);
             }
             StartWorker(data);
+        }
+
+        // Par pelo mesmo vinculo que o TeleportWorld usa; sem par = portal que ninguem nomeou igual.
+        static string[] DescribePortal(ZDO zdo)
+        {
+            var target = ZDOMan.instance.GetZDO(zdo.GetConnectionZDOID(ZDOExtraData.ConnectionType.Portal));
+            var pos = zdo.GetPosition();
+            string to = "", distance = "";
+            if (target != null)
+            {
+                var tp = target.GetPosition();
+                to = tp.x.ToString("F0", Inv) + ", " + tp.z.ToString("F0", Inv);
+                distance = MapText.Distance(pos.x, pos.z, tp.x, tp.z);
+            }
+            return new[]
+            {
+                "tag", zdo.GetString(ZDOVars.s_tag),
+                "prefab", PrefabName(zdo.GetPrefab()),
+                "connected", target != null ? "sim" : "não",
+                "target", to,
+                "distance_m", distance,
+            };
         }
 
         static List<string[]> Describe(HashSet<ZDOID> ids, Func<ZDO, string[]> labels)
@@ -267,11 +289,22 @@ namespace ValheimMetrics.Map
             }
             counts.Sort((a, b) => b.Value.CompareTo(a.Value));
             var result = new List<KeyValuePair<string[], int>>();
+            var byPrefab = new Dictionary<int, long>();
             for (int k = 0; k < counts.Count && k < TopZones; k++)
             {
                 int s = counts[k].Key;
+                byPrefab.Clear();
+                foreach (var zdo in sectors[s])
+                {
+                    int prefab = zdo.GetPrefab();
+                    byPrefab[prefab] = (byPrefab.TryGetValue(prefab, out var n) ? n : 0) + 1;
+                }
+                var named = new List<KeyValuePair<string, long>>();
+                foreach (var kv in byPrefab)
+                    named.Add(new KeyValuePair<string, long>(PrefabName(kv.Key), kv.Value));
                 result.Add(new KeyValuePair<string[], int>(
-                    MapProjection.Labels((s % 512 - 256) * Zone.Size, (s / 512 - 256) * Zone.Size), counts[k].Value));
+                    MapProjection.Labels(new[] { "top", MapText.TopShares(named, 3) },
+                        (s % 512 - 256) * Zone.Size, (s / 512 - 256) * Zone.Size), counts[k].Value));
             }
             return result;
         }
@@ -312,12 +345,16 @@ namespace ValheimMetrics.Map
                 {
                     var tilesDir = Path.Combine(Dir, "tiles");
                     var maskPath = Path.Combine(Dir, "explored.gz");
-                    var before = Directory.Exists(tilesDir) ? MaskFile.Load(maskPath) : null;
+                    var stylePath = Path.Combine(Dir, "style.txt");
+                    var style = TilePainter.Style.ToString(Inv);
+                    bool sameStyle = File.Exists(stylePath) && File.ReadAllText(stylePath).Trim() == style;
+                    var before = Directory.Exists(tilesDir) && sameStyle ? MaskFile.Load(maskPath) : null;
                     var tiles = TilePainter.TilesTouching(TilePainter.Changed(before, map.Explored));
                     if (tiles.Count > 0)
                     {
                         int drawn = TilePainter.Render(tiles, map.Explored, terrain, tilesDir);
                         MaskFile.Save(maskPath, map.Explored);
+                        File.WriteAllText(stylePath, style);
                         Plugin.Log.LogInfo($"Mapa: {tiles.Count} tiles revistos ({drawn} com desenho) em {sw.Elapsed.TotalSeconds:0.0} s.");
                     }
                     _tiles = Directory.GetFiles(tilesDir, "*.png", SearchOption.AllDirectories).Length;
@@ -416,6 +453,14 @@ namespace ValheimMetrics.Map
                 w.Sample("valheim_player_position_meters", pos.y, "player", p.Name, "steam_id", p.SteamId, "axis", "y");
                 w.Sample("valheim_player_position_meters", pos.z, "player", p.Name, "steam_id", p.SteamId, "axis", "z");
             }
+
+            // Valor = Heightmap.Biome (1 Prado, 2 Pantano, 4 Montanha, 8 Floresta Negra, 16 Planicie, 32 Cinzas,
+            // 64 Extremo Norte, 256 Oceano, 512 Nevoa): numero para nao virar serie nova a cada troca de bioma.
+            w.Family("valheim_player_biome", "gauge", "Bioma onde o jogador esta, pelo gerador de mundo (Heightmap.Biome).");
+            var gen = WorldGenerator.instance;
+            if (gen != null)
+                foreach (var p in Players.Connected)
+                    w.Sample("valheim_player_biome", (int)gen.GetBiome(p.Peer.m_refPos), "player", p.Name, "steam_id", p.SteamId);
         }
 
         static void WriteStatic(PrometheusWriter w)
@@ -446,6 +491,8 @@ namespace ValheimMetrics.Map
                     {
                         "name", PinName(pin.Name),
                         "type", ((Minimap.PinType)pin.Type).ToString(),
+                        "kind", MapText.PinKind(pin.Type),
+                        "checked", pin.Checked ? "sim" : "não",
                         "author", AuthorName(pin.Author ?? ""),
                         "author_id", pin.Author ?? "",
                     }, pin.X, pin.Z));

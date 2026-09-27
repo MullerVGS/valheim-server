@@ -109,8 +109,17 @@ namespace ValheimMetrics.Traffic
             w.Family("valheim_zone_traffic_bytes_per_second", "gauge",
                 "Bytes de ZDO por segundo (enviado + recebido) na zona de 64 m, media da ultima janela de 5 min; so as mais caras.");
             foreach (var zone in _lastZones)
+            {
+                if (zone.Top == null)
+                {
+                    var named = new List<KeyValuePair<string, long>>();
+                    foreach (var kv in zone.BytesByPrefab)
+                        named.Add(new KeyValuePair<string, long>(NameOf(kv.Key), kv.Value));
+                    zone.Top = Map.MapText.TopShares(named, 3);
+                }
                 w.Sample("valheim_zone_traffic_bytes_per_second", zone.Tally.Bytes / _lastSeconds,
-                    Map.MapProjection.Labels(zone.Zone.CenterX, zone.Zone.CenterZ));
+                    Map.MapProjection.Labels(new[] { "top", zone.Top }, zone.Zone.CenterX, zone.Zone.CenterZ));
+            }
         }
 
         static void LogWindow(TrafficBook.Window window, double seconds)

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using ValheimMetrics.Map;
@@ -264,8 +265,8 @@ public class MapTests
     [Fact]
     public void Agua_abaixo_de_30_m()
     {
-        TilePainter.Color(1, 29f, false, 0, out var r, out var g, out var b);
-        TilePainter.Color(1, 40f, false, 0, out var lr, out var lg, out var lb);
+        TilePainter.Color(1, 29f, false, 1, 0, out var r, out var g, out var b);
+        TilePainter.Color(1, 40f, false, 1, 0, out var lr, out var lg, out var lb);
 
         Assert.True(b > r && b > g);
         Assert.True(lg > lb);
@@ -277,5 +278,60 @@ public class MapTests
         var labels = MapProjection.Labels(new[] { "player", "Tuttan" }, 17476.266666, -8738.133333);
 
         Assert.Equal(new[] { "player", "Tuttan", "x", "17476", "z", "-8738", "lat", "-0.500000", "lon", "1.000000" }, labels);
+    }
+
+    [Fact]
+    public void Chao_plano_nao_muda_de_cor_e_encosta_para_a_luz_clareia()
+    {
+        Assert.Equal(1.0, TilePainter.Shade(0, 0), 6);
+        // Sobe para leste e desce para o norte: a face olha para noroeste, de onde vem a luz.
+        Assert.True(TilePainter.Shade(0.5, -0.5) > 1.0);
+        Assert.True(TilePainter.Shade(-0.5, 0.5) < 1.0);
+    }
+
+    [Fact]
+    public void Grao_fica_entre_menos_1_e_1_e_nao_depende_do_zoom()
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            double g = TilePainter.Grain(i * 3.7 - 1800, i * -2.3 + 400);
+            Assert.InRange(g, -1, 1);
+        }
+        Assert.Equal(TilePainter.Grain(10.2, -7.1), TilePainter.Grain(10.4, -7.3));
+    }
+
+    [Fact]
+    public void Floresta_e_mais_escura_que_campo()
+    {
+        TilePainter.Color(1, 40f, false, 1, 0, out var r, out var g, out _);
+        TilePainter.Color(1, 40f, true, 1, 0, out var fr, out var fg, out _);
+
+        Assert.True(fr < r && fg < g);
+    }
+
+    [Theory]
+    [InlineData(0, "Fogueira")]
+    [InlineData(3, "Ponto")]
+    [InlineData(9, "Chefe")]
+    [InlineData(16, "Hildir")]
+    [InlineData(99, "Outro")]
+    public void Tipo_de_pin_em_portugues(int type, string kind)
+    {
+        Assert.Equal(kind, MapText.PinKind(type));
+    }
+
+    [Fact]
+    public void Partes_maiores_em_ordem_com_porcentagem()
+    {
+        var parts = new[]
+        {
+            new KeyValuePair<string, long>("wood_wall", 20),
+            new KeyValuePair<string, long>("piece_chest", 50),
+            new KeyValuePair<string, long>("torch", 20),
+            new KeyValuePair<string, long>("rock", 10),
+        };
+
+        Assert.Equal("piece_chest 50%, torch 20%", MapText.TopShares(parts, 2));
+        Assert.Equal("", MapText.TopShares(new KeyValuePair<string, long>[0], 3));
     }
 }

@@ -35,7 +35,9 @@ namespace ValheimMetrics.Map
     public static class TilePainter
     {
         public const int MinZoom = 9;
-        public const int MaxZoom = 14;
+        public const int MaxZoom = 15;
+        // Muda quando o desenho muda: tiles de outro estilo sao redesenhados todos.
+        public const int Style = 2;
         const int N = MapProjection.TileSize;
         const float WaterLevel = 30f;
 
@@ -146,15 +148,17 @@ namespace ValheimMetrics.Map
                     int k = r * G + c;
                     if (alpha[k] <= 0)
                         continue;
-                    // Luz de noroeste: x cresce para leste, a linha cresce para o sul.
+                    // x cresce para leste, a linha cresce para o sul: dhdz positivo = sobe para o norte.
                     double dhdx = (height[k + 1] - height[k - 1]) / (2 * mpp);
                     double dhdz = (height[k - G] - height[k + G]) / (2 * mpp);
-                    Color(biome[k], height[k], forest[k], dhdx - dhdz, out var red, out var green, out var blue);
+                    Color(biome[k], height[k], forest[k], Shade(dhdx, dhdz), Grain(xs[k], zs[k]),
+                        out var red, out var green, out var blue);
                     int o = ((r - 1) * N + (c - 1)) * 4;
                     rgba[o] = red;
                     rgba[o + 1] = green;
                     rgba[o + 2] = blue;
-                    rgba[o + 3] = (byte)Math.Round(alpha[k] * 255);
+                    double a = alpha[k];
+                    rgba[o + 3] = (byte)Math.Round(a * a * (3 - 2 * a) * 255);
                 }
             }
             return rgba;
@@ -175,42 +179,84 @@ namespace ValheimMetrics.Map
         static double At(bool[] explored, int j, int i) =>
             j >= 0 && j < SharedMap.Size && i >= 0 && i < SharedMap.Size && explored[i * SharedMap.Size + j] ? 1 : 0;
 
-        public static void Color(int biome, float height, bool forest, double slope, out byte red, out byte green, out byte blue)
+        // Lambert com luz de noroeste a 45 graus, relevo exagerado 2x e luz ambiente: 1 = chao plano.
+        public static double Shade(double dhdx, double dhdz)
+        {
+            const double Exaggeration = 2.0;
+            double nx = -dhdx * Exaggeration, nz = -dhdz * Exaggeration;
+            double nl = Math.Sqrt(nx * nx + 1 + nz * nz);
+            const double lx = -0.5, ly = 0.7071, lz = 0.5;
+            double lambert = Math.Max(0, (nx * lx + ly + nz * lz) / nl);
+            return 0.35 + 0.65 * lambert / ly;
+        }
+
+        // Ruido fixo no mundo (celula de 1,5 m), igual em todo zoom: textura de copa e de chao.
+        public static double Grain(double x, double z)
+        {
+            unchecked
+            {
+                int cx = (int)Math.Floor(x / 1.5), cz = (int)Math.Floor(z / 1.5);
+                uint h = (uint)(cx * 73856093) ^ (uint)(cz * 19349663);
+                h ^= h >> 13;
+                h *= 0x5bd1e995;
+                h ^= h >> 15;
+                return (h & 0xFFFF) / 65535.0 * 2 - 1;
+            }
+        }
+
+        public static void Color(int biome, float height, bool forest, double shade, double grain,
+            out byte red, out byte green, out byte blue)
         {
             double r, g, b;
             if (height < WaterLevel)
             {
-                double depth = Math.Min(1, Math.Max(0, (WaterLevel - height) / 40.0));
-                r = 78 - 43 * depth;
-                g = 132 - 62 * depth;
-                b = 165 - 50 * depth;
-                red = (byte)r;
-                green = (byte)g;
-                blue = (byte)b;
+                // Raso turquesa perto da costa, azul fundo longe; a agua nao recebe sombra do fundo.
+                double depth = Math.Min(1, Math.Max(0, (WaterLevel - height) / 30.0));
+                double t = Math.Sqrt(depth);
+                r = 92 - 64 * t;
+                g = 158 - 88 * t;
+                b = 170 - 52 * t;
+                if (height > WaterLevel - 1.2f)
+                    (r, g, b) = (r + 28, g + 26, b + 18);
+                red = Clamp(r);
+                green = Clamp(g);
+                blue = Clamp(b);
                 return;
             }
 
             switch (biome)
             {
-                case Meadows: (r, g, b) = forest ? (96.0, 128.0, 56.0) : (142.0, 168.0, 70.0); break;
-                case BlackForest: (r, g, b) = (62.0, 86.0, 46.0); break;
-                case Swamp: (r, g, b) = (104.0, 88.0, 62.0); break;
-                case Mountain: (r, g, b) = (222.0, 228.0, 234.0); break;
-                case Plains: (r, g, b) = forest ? (170.0, 160.0, 90.0) : (206.0, 190.0, 112.0); break;
-                case Mistlands: (r, g, b) = forest ? (92.0, 86.0, 104.0) : (122.0, 112.0, 132.0); break;
-                case AshLands: (r, g, b) = (140.0, 52.0, 42.0); break;
-                case DeepNorth: (r, g, b) = (206.0, 222.0, 236.0); break;
+                case Meadows: (r, g, b) = (132.0, 164.0, 72.0); break;
+                case BlackForest: (r, g, b) = (74.0, 98.0, 58.0); break;
+                case Swamp: (r, g, b) = (98.0, 86.0, 62.0); break;
+                case Mountain: (r, g, b) = (226.0, 231.0, 238.0); break;
+                case Plains: (r, g, b) = (206.0, 188.0, 110.0); break;
+                case Mistlands: (r, g, b) = (118.0, 110.0, 130.0); break;
+                case AshLands: (r, g, b) = (132.0, 54.0, 44.0); break;
+                case DeepNorth: (r, g, b) = (212.0, 226.0, 240.0); break;
                 case Ocean: (r, g, b) = (200.0, 188.0, 148.0); break;
                 default: (r, g, b) = (160.0, 160.0, 160.0); break;
             }
+            if (forest)
+            {
+                // Copa: mais escura e manchada, puxada para o verde da floresta do bioma.
+                double k = 0.62 + 0.14 * grain;
+                (r, g, b) = (r * k, g * (k + 0.06), b * k);
+            }
+            else
+            {
+                double k = 1 + 0.05 * grain;
+                (r, g, b) = (r * k, g * k, b * k);
+            }
             // Praia: o primeiro metro e meio acima da agua.
             if (height < WaterLevel + 1.5f && biome != Mountain && biome != DeepNorth)
-                (r, g, b) = (214.0, 200.0, 150.0);
+                (r, g, b) = (214.0 + 8 * grain, 200.0 + 8 * grain, 150.0 + 6 * grain);
+            // Mais alto, um pouco mais claro: ajuda a ler morro sem curva de nivel.
+            double lift = 1 + Math.Min(0.18, Math.Max(0, (height - WaterLevel) / 400.0));
 
-            double shade = Math.Max(0.6, Math.Min(1.4, 1 + slope * 0.6));
-            red = Clamp(r * shade);
-            green = Clamp(g * shade);
-            blue = Clamp(b * shade);
+            red = Clamp(r * shade * lift);
+            green = Clamp(g * shade * lift);
+            blue = Clamp(b * shade * lift);
         }
 
         static byte Clamp(double v) => (byte)Math.Max(0, Math.Min(255, Math.Round(v)));

@@ -84,6 +84,8 @@ namespace ValheimMetrics.Traffic
         public readonly Tally Tally = new Tally();
         public readonly Dictionary<int, long> BytesByPrefab = new Dictionary<int, long>();
         public int Zdos;
+        // Texto das partes maiores, montado por quem sabe o nome do prefab.
+        public string Top;
     }
 
     // Soma o que cada ZDO custa na rede. Por prefab acumula para sempre (vira contador); por ZDO e por

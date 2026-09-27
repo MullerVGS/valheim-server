@@ -278,14 +278,17 @@ no zoom 11; perto do Equador o Mercator e linear (0,3 m de erro na borda do mund
 - **Metricas** (sempre): `valheim_player_position_meters{axis}`, `valheim_map_pin_info`,
   `valheim_portal_info`, `valheim_bed_info`, `valheim_map_table_info`, `valheim_player_deaths_total`
   (tumulo novo), `valheim_lag_reports_by_zone_total`, `valheim_zone_zdos` (300 zonas mais cheias) e
-  `valheim_zone_traffic_bytes_per_second` (100 mais caras da ultima janela de 5 min). Tudo que tem lugar fixo
-  leva `x`, `z`, `lat` e `lon`; a posicao do jogador divide por 17476,27 na consulta.
+  `valheim_zone_traffic_bytes_per_second` (100 mais caras da ultima janela de 5 min), `valheim_player_biome`
+  (valor = `Heightmap.Biome`). Tudo que tem lugar fixo leva `x`, `z`, `lat` e `lon`; a posicao do jogador divide
+  por 17476,27 na consulta. Para o clique: pin com `kind` (tipo em portugues) e `checked`; portal com
+  `connected`, `target` e `distance_m` (o par do TeleportWorld); zona com `top` (os 3 prefabs que mais pesam).
 - **Sem spoiler**: pins e calor de ZDO so do que as mesas de cartografia mostram (uniao de todas as mesas,
   relida a cada minuto). Jogador, morte e lag aparecem onde acontecem.
-- **Fundo** (`VALHEIM_MAP_DIR=/config/map`): o plugin desenha `tiles/{z}/{x}/{y}.png` (zoom 9 a 14) com o
+- **Fundo** (`VALHEIM_MAP_DIR=/config/map`): o plugin desenha `tiles/{z}/{x}/{y}.png` (zoom 9 a 15, 0,75 m/px) com o
   gerador de mundo do proprio servidor, transparente fora do explorado. Roda numa thread de baixa
   prioridade e so redesenha os tiles que a mesa mudou (`explored.gz` guarda o que esta no disco; apagar
-  `tiles/` redesenha tudo, ~1 min). Terreno e o gerado: construcao e terra mexida nao aparecem.
+  `tiles/` redesenha tudo, ~2 min; `style.txt` diferente de `TilePainter.Style` tambem). Terreno e o gerado:
+  construcao e terra mexida nao aparecem.
   `players.tsv` guarda SteamID -> nome para o autor dos pins.
 - **Servir os tiles**: o navegador busca direto, entao eles precisam estar na mesma origem do Grafana, por
   exemplo montando `map/tiles` do volume em `public/img/valheim-map` do Grafana e usando
