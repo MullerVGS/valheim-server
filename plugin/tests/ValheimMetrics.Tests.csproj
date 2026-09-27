@@ -33,6 +33,7 @@
     <Compile Include="../src/Map/MapText.cs" />
     <Compile Include="../src/Map/PieceLayer.cs" />
     <Compile Include="../src/Map/MapRender.cs" />
+    <Compile Include="../src/Fire/FuelRules.cs" />
   </ItemGroup>
 
   <ItemGroup>

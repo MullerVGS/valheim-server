@@ -268,6 +268,23 @@ porque so pede um item de mesmo nome com espaco.
   inventario, que nao cai no chao e some no proximo place stacks.
 - Formato de item diferente de 108..109 (update do jogo) nao e mexido: conta em `valheim_slot_marks_skipped_total`.
 
+### Combustivel de fogo (opt-in)
+
+`VALHEIM_FIRE_FUEL_FACTOR=5` no `.env`: tochas, braseiros, fogueiras, lareiras e tudo que usa o
+`Fireplace` do jogo gasta 5 vezes menos, sem mod no cliente. Vazio = jogo.
+
+- Quem desconta o combustivel e o cliente dono do ZDO. O servidor ve cada `fuel`/`lastTime` que chega,
+  anota o que o fogo mais lento nao teria gasto e soma no ZDO de 5 em 5 minutos por fogo. O contador
+  sobe devagar e da um pulo quando a devolucao entra.
+- Devolve no maximo o que o relogio (`lastTime`) justifica: fogo molhado, desligado ou reabastecido
+  na janela nao ganha nada.
+- Quem volta depois de horas longe encontra o fogo com o que restaria no ritmo lento; se ele tinha
+  apagado por falta, o servidor devolve na hora e ele reacende.
+- A escrita vai com a revisao do ZDO 1000 a frente, para nao perder a corrida com o dono (que grava a
+  cada 2 s). O dono adota o ZDO inteiro do servidor e segue dali.
+- Devolucao pendente vive na memoria: restart perde ate 5 minutos de devolucao por fogo.
+- `valheim_fire_fuel_refunded_total` (unidades devolvidas), `_writes_total`, `_relit_total`, `_pending`.
+
 ### Mapa (opt-in)
 
 O Geomap do Grafana desenha pontos sobre tiles XYZ em Web Mercator, e o plugin fala essa lingua: o
