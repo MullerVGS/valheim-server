@@ -13,12 +13,12 @@ using ValheimMetrics.Traffic;
 
 namespace ValheimMetrics.Map
 {
-    // O mapa no Grafana: posicao dos jogadores, pins das mesas de cartografia, portais, camas, mortes,
-    // reclamacoes de lag e ZDOs por zona, tudo com coordenada de mundo em metros (labels x/z). Com
-    // VALHEIM_MAP_DIR, tambem desenha o fundo em tiles XYZ (ver MapProjection) so com o que as mesas
-    // mostram, com as pecas construidas por cima. O desenho roda uma vez por dia (DrawSettings): a
-    // varredura das pecas vai aos pedacos na thread principal, com orcamento por frame; o desenho
-    // numa thread propria, dormindo na proporcao do trabalho. Leitura das mesas a cada minuto.
+    // O mapa: posicao dos jogadores, pins das mesas de cartografia, portais, camas, mortes, reclamacoes
+    // de lag e ZDOs por zona, como metricas com coordenada de mundo em metros (labels x/z). Com
+    // VALHEIM_MAP_DIR, entrega tambem os dados crus do site do mapa (MapFiles): o terreno do mundo
+    // (uma vez por seed, numa thread de prioridade minima), o explorado das mesas (quando muda) e as
+    // construcoes (varredura aos pedacos na thread principal, com orcamento por frame). O plugin nao
+    // desenha nada. Leitura das mesas a cada minuto.
     sealed class MapCollector : ICollector
     {
         const double ScanDelaySeconds = 20;
@@ -32,9 +32,10 @@ namespace ValheimMetrics.Map
 
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly string Dir = Environment.GetEnvironmentVariable("VALHEIM_MAP_DIR");
-        static readonly DrawSettings Settings = DrawSettings.Parse(Environment.GetEnvironmentVariable);
-        const string NowFile = "draw.now";
-        const string PendingFile = "draw.pending";
+        static readonly MapSettings Settings = MapSettings.Parse(Environment.GetEnvironmentVariable);
+        // Arquivo que pede uma varredura de construcoes agora.
+        const string NowFile = "pieces.now";
+        const double TerrainDuty = 0.5;
 
         static readonly HashSet<ZDOID> Tables = new HashSet<ZDOID>();
         static readonly HashSet<ZDOID> Portals = new HashSet<ZDOID>();
@@ -64,15 +65,19 @@ namespace ValheimMetrics.Map
         static long _renders;
         static long _renderErrors;
 
-        static readonly RenderStats Draw = new RenderStats();
         static PieceCatalog _catalog;
         static PieceScan _scan;
         static PieceScan _lastScan;
-        static PieceLayer _lastPieces;
-        static Thread _drawer;
-        static DateTime _nextDraw;
-        static bool _resume;
-        static volatile int _tiles = -1;
+        static int[] _piecesByKind;
+        static DateTime _nextScan;
+        static bool[] _writtenExplored;
+        static long _exploredWrites;
+        static long _piecesWrites;
+        static long _exportErrors;
+        static Thread _terrainThread;
+        static bool _terrainChecked;
+        static volatile bool _terrainReady;
+        static double _terrainSeconds;
 
         public string Name => "map";
 
@@ -82,11 +87,9 @@ namespace ValheimMetrics.Map
             Patcher.Patch(harmony, typeof(ZDO), "Deserialize", new[] { typeof(ZPackage) }, typeof(MapCollector),
                 postfix: nameof(DeserializePostfix), tag: "map");
             LoadNames();
-            _nextDraw = Settings.NextAfter(DateTime.Now);
-            _resume = Dir != null && File.Exists(Path.Combine(Dir, PendingFile));
             if (Dir != null)
-                Plugin.Log.LogInfo($"Mapa: desenho diario as {Settings.At:hh\\:mm} (zoom ate {Settings.MaxZoom}, duty {Settings.Duty:0.##}, " +
-                    $"varredura {Settings.ScanBudgetMs:0.##} ms/frame){(_resume ? "; retomando o desenho interrompido" : "")}.");
+                Plugin.Log.LogInfo($"Mapa: dados do site em {Dir}; construcoes a cada {Settings.PiecesEvery.TotalMinutes:0} min " +
+                    $"(varredura {Settings.ScanBudgetMs:0.##} ms/frame).");
         }
 
         // Portal e o que o proprio jogo conecta (Game.PortalPrefabHash): madeira, pedra e os que vierem.
@@ -162,7 +165,8 @@ namespace ValheimMetrics.Map
                         _nextRefresh = now + RefreshSeconds;
                         Refresh();
                     }
-                    MaybeStartDraw();
+                    MaybeExportTerrain();
+                    MaybeStartScan();
                 }
             }
 
@@ -170,7 +174,7 @@ namespace ValheimMetrics.Map
             WriteStatic(w);
             WriteCounters(w);
             WriteMapState(w);
-            WriteDraw(w);
+            WriteExport(w);
         }
 
         // Uma vez por boot: o que ja estava no mundo. Tumulo existente nao e morte nova.
@@ -358,9 +362,11 @@ namespace ValheimMetrics.Map
                 var maps = new List<SharedMap>();
                 foreach (var bytes in data)
                     maps.Add(SharedMap.FromCompressed(bytes));
-                _map = SharedMap.Union(maps);
+                var map = SharedMap.Union(maps);
+                _map = map;
                 _renderSeconds = sw.Elapsed.TotalSeconds;
                 Interlocked.Increment(ref _renders);
+                WriteExplored(map.Explored);
             }
             catch (Exception e)
             {
@@ -369,42 +375,103 @@ namespace ValheimMetrics.Map
             }
         }
 
-        // Dispara no horario do dia, com o arquivo draw.now na pasta do mapa (pedido manual) ou no
-        // boot se o anterior foi interrompido (draw.pending). Precisa das mesas ja lidas.
-        static void MaybeStartDraw()
+        // Ainda na thread das mesas: so grava quando o explorado mudou.
+        static void WriteExplored(bool[] explored)
         {
-            if (Dir == null || WorldGenerator.instance == null || _map == null || _scan != null || (_drawer != null && _drawer.IsAlive))
+            if (Dir == null || ExploredFile.Same(_writtenExplored, explored))
+                return;
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                MapFiles.WriteAtomic(Path.Combine(Dir, MapFiles.Explored), w => ExploredFile.Write(w, explored));
+                _writtenExplored = explored;
+                Interlocked.Increment(ref _exploredWrites);
+            }
+            catch (Exception e)
+            {
+                Interlocked.Increment(ref _exportErrors);
+                Plugin.Log.LogWarning($"Mapa: nao gravou {MapFiles.Explored}: {e.Message}");
+            }
+        }
+
+        // Terreno do mundo inteiro, uma vez por seed: 4 milhoes de pontos do gerador numa thread de
+        // prioridade minima que dorme na proporcao do trabalho (TerrainDuty = no maximo meio nucleo).
+        static void MaybeExportTerrain()
+        {
+            if (Dir == null || _terrainChecked || WorldGenerator.instance == null || ZNet.World == null)
+                return;
+            _terrainChecked = true;
+            int seed = ZNet.World.m_seed;
+            var path = Path.Combine(Dir, MapFiles.Terrain);
+            if (TerrainGrid.ReadSeed(path) == seed)
+            {
+                _terrainReady = true;
+                return;
+            }
+            var gen = WorldGenerator.instance;
+            _terrainThread = new Thread(() =>
+            {
+                try
+                {
+                    var work = Stopwatch.StartNew();
+                    var grid = new TerrainGrid();
+                    var row = new Stopwatch();
+                    for (int i = 0; i < TerrainGrid.Size; i++)
+                    {
+                        row.Restart();
+                        float z = TerrainGrid.Center(i);
+                        for (int j = 0; j < TerrainGrid.Size; j++)
+                        {
+                            float x = TerrainGrid.Center(j);
+                            var biome = gen.GetBiome(x, z);
+                            float height = gen.GetBiomeHeight(biome, x, z, out _);
+                            grid.Set(i, j, (int)biome, height, WorldGenerator.GetForestFactor(new Vector3(x, 0f, z)));
+                        }
+                        _terrainSeconds += row.Elapsed.TotalSeconds;
+                        Thread.Sleep((int)Math.Min(1000, row.Elapsed.TotalMilliseconds * (1 / TerrainDuty - 1)));
+                    }
+                    Directory.CreateDirectory(Dir);
+                    MapFiles.WriteAtomic(path, w => grid.Write(w, seed));
+                    _terrainReady = true;
+                    Plugin.Log.LogInfo($"Mapa: terreno da seed {seed} gravado ({_terrainSeconds:0.0} s de trabalho, {work.Elapsed.TotalSeconds:0} s no total).");
+                }
+                catch (Exception e)
+                {
+                    Interlocked.Increment(ref _exportErrors);
+                    Plugin.Log.LogWarning($"Mapa: terreno falhou: {e}");
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "ValheimMetrics.MapTerrain",
+                Priority = System.Threading.ThreadPriority.Lowest,
+            };
+            _terrainThread.Start();
+        }
+
+        // No boot (assim que as mesas foram lidas), a cada PiecesEvery ou com o arquivo pieces.now.
+        static void MaybeStartScan()
+        {
+            if (Dir == null || _map == null || _scan != null)
                 return;
             var nowFile = Path.Combine(Dir, NowFile);
-            string reason = null;
-            if (File.Exists(nowFile))
-            {
-                File.Delete(nowFile);
-                reason = "pedido manual";
-            }
-            else if (_resume)
-                reason = "retomada";
-            else if (DateTime.Now >= _nextDraw)
-                reason = "horario";
-            if (reason == null)
+            bool asked = File.Exists(nowFile);
+            if (!asked && DateTime.Now < _nextScan)
                 return;
-            _resume = false;
-            _nextDraw = Settings.NextAfter(DateTime.Now);
-
+            if (asked)
+                File.Delete(nowFile);
+            _nextScan = DateTime.Now + Settings.PiecesEvery;
             if (_catalog == null)
             {
                 var sw = Stopwatch.StartNew();
                 _catalog = PieceCatalog.Build(ZNetScene.instance);
                 Plugin.Log.LogInfo($"Mapa: {_catalog.Count} prefabs de peca no catalogo ({sw.ElapsedMilliseconds} ms); maiores: {_catalog.Largest(8)}.");
             }
-            Directory.CreateDirectory(Dir);
-            File.WriteAllText(Path.Combine(Dir, PendingFile), DateTime.Now.ToString("s", Inv));
             _scan = new PieceScan(_bySector(ZDOMan.instance), _map.Explored, _catalog);
-            Draw.Active = true;
-            Plugin.Log.LogInfo($"Mapa: desenho comecou ({reason}).");
         }
 
-        // Todo frame: um pedaco da varredura, dentro do orcamento. Terminou, o desenho vai para a thread.
+        // Todo frame: um pedaco da varredura, dentro do orcamento. Terminou, o arquivo e gravado fora
+        // da thread principal.
         public static void OnFrame()
         {
             var scan = _scan;
@@ -417,46 +484,34 @@ namespace ValheimMetrics.Map
                     return;
                 _scan = null;
                 _lastScan = scan;
-                var pieces = new PieceLayer(scan.Marks);
-                _lastPieces = pieces;
-                Plugin.Log.LogInfo($"Mapa: {pieces.Count} pecas em {scan.Zdos} ZDOs, {scan.Seconds * 1000:0} ms em {scan.Frames} frames " +
+                var marks = scan.Marks;
+                var byKind = new int[Enum.GetValues(typeof(PieceKind)).Length];
+                foreach (var m in marks)
+                    byKind[(int)m.Kind]++;
+                _piecesByKind = byKind;
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(Dir);
+                        MapFiles.WriteAtomic(Path.Combine(Dir, MapFiles.Pieces), w => PiecesFile.Write(w, marks));
+                        Interlocked.Increment(ref _piecesWrites);
+                    }
+                    catch (Exception e)
+                    {
+                        Interlocked.Increment(ref _exportErrors);
+                        Plugin.Log.LogWarning($"Mapa: nao gravou {MapFiles.Pieces}: {e.Message}");
+                    }
+                });
+                Plugin.Log.LogInfo($"Mapa: {marks.Count} pecas em {scan.Zdos} ZDOs, {scan.Seconds * 1000:0} ms em {scan.Frames} frames " +
                     $"(pior frame {scan.MaxFrameSeconds * 1000:0.0} ms).");
-                StartDrawer(pieces, scan.Explored);
             }
             catch (Exception e)
             {
                 _scan = null;
-                Draw.Active = false;
-                Interlocked.Increment(ref Draw.Errors);
+                Interlocked.Increment(ref _exportErrors);
                 Plugin.Log.LogWarning($"Mapa: varredura das pecas falhou: {e}");
             }
-        }
-
-        static void StartDrawer(PieceLayer pieces, bool[] explored)
-        {
-            var terrain = new GameTerrain(WorldGenerator.instance);
-            var job = new RenderJob(explored, terrain, pieces, Dir, Settings.MaxZoom, Settings.Duty, Draw);
-            _drawer = new Thread(() =>
-            {
-                try
-                {
-                    job.Run();
-                    File.Delete(Path.Combine(Dir, PendingFile));
-                    _tiles = Directory.GetFiles(job.TilesDir, "*.png", SearchOption.AllDirectories).Length;
-                    Plugin.Log.LogInfo($"Mapa: desenho terminou em {Draw.LastSeconds:0} s; {Draw.TilesDrawn} tiles desenhados, " +
-                        $"{Draw.TilesDeleted} apagados, {Draw.TilesSkipped} sem mudanca (acumulado desde o boot).");
-                }
-                catch (Exception e)
-                {
-                    Plugin.Log.LogWarning($"Mapa: desenho falhou: {e}");
-                }
-            })
-            {
-                IsBackground = true,
-                Name = "ValheimMetrics.MapDraw",
-                Priority = System.Threading.ThreadPriority.Lowest,
-            };
-            _drawer.Start();
         }
 
         static void RememberNames()
@@ -627,43 +682,22 @@ namespace ValheimMetrics.Map
             w.Sample("valheim_map_render_errors_total", Interlocked.Read(ref _renderErrors));
         }
 
-        // Custo do desenho diario, para balancear zoom, duty e orcamento da varredura.
-        static void WriteDraw(PrometheusWriter w)
+        // Custo e frescor dos arquivos do site.
+        static void WriteExport(PrometheusWriter w)
         {
             if (Dir == null)
                 return;
-            if (_tiles >= 0)
-            {
-                w.Family("valheim_map_tiles", "gauge", "Tiles PNG do fundo do mapa no disco (contados no fim do desenho).");
-                w.Sample("valheim_map_tiles", _tiles);
-            }
-            w.Family("valheim_map_draw_active", "gauge", "1 enquanto o desenho do mapa roda (varredura ou tiles).");
-            w.Sample("valheim_map_draw_active", Draw.Active || _scan != null ? 1 : 0);
-            w.Family("valheim_map_draw_next_timestamp_seconds", "gauge", "Proximo desenho agendado.");
-            w.Sample("valheim_map_draw_next_timestamp_seconds", new DateTimeOffset(_nextDraw).ToUnixTimeSeconds());
-            w.Family("valheim_map_draw_runs_total", "counter", "Desenhos completos.");
-            w.Sample("valheim_map_draw_runs_total", Interlocked.Read(ref Draw.Runs));
-            w.Family("valheim_map_draw_errors_total", "counter", "Desenhos ou varreduras que falharam (detalhe no log).");
-            w.Sample("valheim_map_draw_errors_total", Interlocked.Read(ref Draw.Errors));
-            w.Family("valheim_map_draw_tiles_total", "counter", "Tiles por resultado: desenhado, apagado ou pulado por nao ter mudado.");
-            w.Sample("valheim_map_draw_tiles_total", Interlocked.Read(ref Draw.TilesDrawn), "result", "drawn");
-            w.Sample("valheim_map_draw_tiles_total", Interlocked.Read(ref Draw.TilesDeleted), "result", "deleted");
-            w.Sample("valheim_map_draw_tiles_total", Interlocked.Read(ref Draw.TilesSkipped), "result", "skipped");
-            w.Family("valheim_map_draw_phase_seconds_total", "counter", "Tempo da thread de desenho por fase (throttle = dormindo de proposito).");
-            foreach (RenderPhase p in Enum.GetValues(typeof(RenderPhase)))
-                w.Sample("valheim_map_draw_phase_seconds_total", Draw.PhaseSeconds[(int)p], "phase", p.ToString().ToLowerInvariant());
-            w.Family("valheim_map_draw_gc_collections_total", "counter", "Coletas do GC enquanto o desenho rodava (inclui as do jogo no mesmo periodo).");
-            w.Sample("valheim_map_draw_gc_collections_total", Interlocked.Read(ref Draw.GcCollections));
-            w.Family("valheim_map_draw_candidate_tiles", "gauge", "Tiles avaliados no ultimo desenho.");
-            w.Sample("valheim_map_draw_candidate_tiles", Draw.Candidates);
-            w.Family("valheim_map_draw_pending_tiles", "gauge", "Tiles que faltam no desenho em curso.");
-            w.Sample("valheim_map_draw_pending_tiles", Draw.Pending);
-            w.Family("valheim_map_draw_last_start_timestamp_seconds", "gauge", "Inicio do ultimo desenho de tiles.");
-            w.Sample("valheim_map_draw_last_start_timestamp_seconds", Draw.LastStartUnix);
-            w.Family("valheim_map_draw_last_duration_seconds", "gauge", "Duracao do ultimo desenho de tiles, contando o throttle.");
-            w.Sample("valheim_map_draw_last_duration_seconds", Draw.LastSeconds);
-            w.Family("valheim_map_draw_tile_seconds_max", "gauge", "Tile mais demorado do ultimo desenho, sem o throttle.");
-            w.Sample("valheim_map_draw_tile_seconds_max", Draw.LastTileSecondsMax);
+            w.Family("valheim_map_terrain_ready", "gauge", "1 quando o terrain.bin da seed atual esta no disco.");
+            w.Sample("valheim_map_terrain_ready", _terrainReady ? 1 : 0);
+            w.Family("valheim_map_terrain_work_seconds", "gauge", "Trabalho da geracao do terreno neste boot, sem o sono (0 = ja existia).");
+            w.Sample("valheim_map_terrain_work_seconds", _terrainSeconds);
+            w.Family("valheim_map_file_writes_total", "counter", "Arquivos do site gravados, por arquivo.");
+            w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref _exploredWrites), "file", "explored");
+            w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref _piecesWrites), "file", "pieces");
+            w.Family("valheim_map_export_errors_total", "counter", "Falhas ao gerar ou gravar os arquivos do site (detalhe no log).");
+            w.Sample("valheim_map_export_errors_total", Interlocked.Read(ref _exportErrors));
+            w.Family("valheim_map_pieces_next_timestamp_seconds", "gauge", "Proxima varredura de construcoes.");
+            w.Sample("valheim_map_pieces_next_timestamp_seconds", _nextScan == default ? 0 : new DateTimeOffset(_nextScan).ToUnixTimeSeconds());
 
             var scan = _lastScan;
             if (scan != null)
@@ -677,12 +711,12 @@ namespace ValheimMetrics.Map
                 w.Family("valheim_map_piece_scan_zdos", "gauge", "ZDOs olhados na ultima varredura (so zonas que as mesas mostram).");
                 w.Sample("valheim_map_piece_scan_zdos", scan.Zdos);
             }
-            var pieces = _lastPieces;
-            if (pieces != null)
+            var byKind = _piecesByKind;
+            if (byKind != null)
             {
-                w.Family("valheim_map_pieces", "gauge", "Pecas desenhadas no mapa por tipo (material da construcao ou funcao).");
+                w.Family("valheim_map_pieces", "gauge", "Construcoes no pieces.bin por tipo (material da construcao ou funcao).");
                 foreach (PieceKind k in Enum.GetValues(typeof(PieceKind)))
-                    w.Sample("valheim_map_pieces", pieces.CountOf(k), "kind", k.ToString().ToLowerInvariant());
+                    w.Sample("valheim_map_pieces", byKind[(int)k], "kind", k.ToString().ToLowerInvariant());
             }
         }
     }

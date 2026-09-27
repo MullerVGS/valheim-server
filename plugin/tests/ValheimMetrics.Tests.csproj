@@ -28,11 +28,9 @@
     <Compile Include="../src/Ownership/OwnerTally.cs" />
     <Compile Include="../src/Map/SharedMap.cs" />
     <Compile Include="../src/Map/MapProjection.cs" />
-    <Compile Include="../src/Map/Png.cs" />
-    <Compile Include="../src/Map/TilePainter.cs" />
+    <Compile Include="../src/Map/MapFiles.cs" />
     <Compile Include="../src/Map/MapText.cs" />
     <Compile Include="../src/Map/PieceLayer.cs" />
-    <Compile Include="../src/Map/MapRender.cs" />
     <Compile Include="../src/Fire/FuelRules.cs" />
   </ItemGroup>
 
