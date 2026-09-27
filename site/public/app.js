@@ -1,4 +1,5 @@
 import { MapRenderer, parseTerrain, sunDirection, WORLD_SIZE } from './mapgl.js';
+import { groupSettlements, KINDS, parsePieces, pieceAt } from './pieces.js';
 
 const GAME = 'game';
 const STATE_EVERY_MS = 10000;
@@ -37,10 +38,12 @@ const overlay = $('overlay');
 const ctx = overlay.getContext('2d');
 
 const view = { x: -44, z: -68, metersPerPixel: 3.2, pixelRatio: 1 };
-const layers = { pins: true, labels: true, portals: false, beds: false, players: true };
+const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true };
 let state = null;
 let renderer = null;
 let icons = {};
+let pieces = null;
+let settlements = null;
 let hits = [];
 let dirty = true;
 
@@ -161,6 +164,7 @@ function bindInput() {
     layers[input.dataset.layer] = input.checked;
     input.addEventListener('change', () => {
       layers[input.dataset.layer] = input.checked;
+      if (renderer) renderer.showPieces = layers.pieces;
       dirty = true;
     });
   }
@@ -178,7 +182,7 @@ function bindInput() {
 function hover(sx, sy) {
   const [wx, wz] = toWorld(sx, sy);
   $('coords').textContent = `x ${wx.toFixed(0)}, z ${wz.toFixed(0)}`;
-  const hit = hits.find((h) => Math.abs(h.sx - sx) <= h.r && Math.abs(h.sy - sy) <= h.r);
+  const hit = hits.find((h) => Math.abs(h.sx - sx) <= h.r && Math.abs(h.sy - sy) <= h.r) ?? pieceHit(wx, wz);
   if (!hit) return hideTooltip();
   const tip = $('tooltip');
   tip.innerHTML = '';
@@ -195,6 +199,31 @@ function hover(sx, sy) {
   const y = Math.min(sy + 14, window.innerHeight - tip.offsetHeight - 8);
   tip.style.left = `${x}px`;
   tip.style.top = `${y}px`;
+}
+
+const PLACE_PINS = new Set(['Icon0', 'Icon1', 'Icon2', 'Icon3']);
+
+// Construcao sob o mouse: material da peca e a base a que ela pertence.
+function pieceHit(wx, wz) {
+  if (!pieces || !layers.pieces) return null;
+  const i = pieceAt(pieces, settlements, wx, wz, view.metersPerPixel * 0.75);
+  if (i < 0) return null;
+  const g = settlements.groups[settlements.pieceGroup[i]];
+  const kind = KINDS[pieces.kind[i]];
+  const pin = state?.pins.find(
+    (p) => PLACE_PINS.has(p.type) && p.name && p.x >= g.minX - 15 && p.x <= g.maxX + 15 && p.z >= g.minZ - 15 && p.z <= g.maxZ + 15,
+  );
+  const mix = g.kinds
+    .map((c, k) => [c, k])
+    .filter(([c]) => c / g.count >= 0.08)
+    .sort((a, b) => b[0] - a[0])
+    .map(([c, k]) => `${KINDS[k].name} ${Math.round((c / g.count) * 100)}%`);
+  const lines = [
+    g.count === 1 ? 'peça solta' : `${fmt.format(g.count)} peças`,
+    mix.join(' · '),
+    `aqui: ${kind.name}`,
+  ];
+  return { title: pin ? pin.name : g.count >= 40 ? 'Base' : 'Construção', lines };
 }
 
 function hideTooltip() {
@@ -426,14 +455,24 @@ async function main() {
   try {
     const art = await (await fetch(`${GAME}/art.json`)).json();
     const r = new MapRenderer(mapCanvas);
-    const [, terrainBuf, iconList] = await Promise.all([
+    const [, terrainBuf, iconList, piecesBuf] = await Promise.all([
       r.loadArt(GAME, art),
       fetch('data/terrain.bin').then((res) => {
         if (!res.ok) throw new Error(`terreno ${res.status}`);
         return res.arrayBuffer();
       }),
       Promise.all(['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss'].map(loadIcon)),
+      // Sem construcoes o mapa abre do mesmo jeito.
+      fetch('data/pieces.bin')
+        .then((res) => (res.ok ? res.arrayBuffer() : null))
+        .catch(() => null),
     ]);
+    if (piecesBuf && r.pieces) {
+      pieces = parsePieces(piecesBuf);
+      settlements = groupSettlements(pieces);
+      r.setPieces(pieces);
+    }
+    r.showPieces = layers.pieces;
     icons = Object.fromEntries(iconList);
     r.setTerrain(parseTerrain(terrainBuf), biomeColors(art));
     await document.fonts.load('700 16px Norse');
