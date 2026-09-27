@@ -222,6 +222,26 @@ public class MapTests
     }
 
     [Fact]
+    public void Catalogo_de_formas_no_formato_do_site()
+    {
+        var entries = new[] { new CatalogEntry { Prefab = -123456, Kind = PieceKind.Wood, Crop = false, CenterX = 0.5f, CenterZ = -1, HalfX = 2, HalfZ = 0.1f },
+            new CatalogEntry { Prefab = 42, Kind = PieceKind.Crop, Crop = true, HalfX = 0.5f, HalfZ = 0.5f } };
+        var path = Path.Combine(Path.GetTempPath(), "catalog-" + Guid.NewGuid() + ".bin");
+        MapFiles.WriteAtomic(path, w => CatalogFile.Write(w, entries));
+
+        var bytes = File.ReadAllBytes(path);
+        Assert.Equal("VPK1", Encoding.ASCII.GetString(bytes, 0, 4));
+        Assert.Equal(8 + 2 * CatalogFile.RecordBytes, bytes.Length);
+        Assert.Equal(-123456, BitConverter.ToInt32(bytes, 8));
+        Assert.Equal((byte)PieceKind.Wood, bytes[12]);
+        Assert.Equal(0, bytes[13]);
+        Assert.Equal(-1f, BitConverter.ToSingle(bytes, 18));
+        Assert.Equal(0.1f, BitConverter.ToSingle(bytes, 26));
+        Assert.Equal(1, bytes[8 + CatalogFile.RecordBytes + 5]);
+        File.Delete(path);
+    }
+
+    [Fact]
     public void Configuracao_com_padrao_e_limites()
     {
         var s = MapSettings.Parse(k => k == MapSettings.PiecesMinutesVariable ? "2" : k == MapSettings.ScanBudgetVariable ? "3.5" : null);

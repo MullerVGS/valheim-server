@@ -72,7 +72,6 @@ namespace ValheimMetrics.Map
         static DateTime _nextScan;
         static bool[] _writtenExplored;
         static long _exploredWrites;
-        static long _piecesWrites;
         static long _exportErrors;
         static Thread _terrainThread;
         static bool _terrainChecked;
@@ -449,6 +448,30 @@ namespace ValheimMetrics.Map
             _terrainThread.Start();
         }
 
+        // Gravacoes em segundo plano por arquivo: 0 = construcoes, 1 = catalogo.
+        const int PiecesSlot = 0, CatalogSlot = 1;
+        static readonly long[] BackgroundWrites = new long[2];
+
+        // Grava fora da thread principal; o contador sobe quando o arquivo esta no disco.
+        static void WriteInBackground(string name, Action<BinaryWriter> write, int slot)
+        {
+            var dir = Dir;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    Directory.CreateDirectory(dir);
+                    MapFiles.WriteAtomic(Path.Combine(dir, name), write);
+                    Interlocked.Increment(ref BackgroundWrites[slot]);
+                }
+                catch (Exception e)
+                {
+                    Interlocked.Increment(ref _exportErrors);
+                    Plugin.Log.LogWarning($"Mapa: nao gravou {name}: {e.Message}");
+                }
+            });
+        }
+
         // No boot (assim que as mesas foram lidas), a cada PiecesEvery ou com o arquivo pieces.now.
         static void MaybeStartScan()
         {
@@ -466,6 +489,8 @@ namespace ValheimMetrics.Map
                 var sw = Stopwatch.StartNew();
                 _catalog = PieceCatalog.Build(ZNetScene.instance);
                 Plugin.Log.LogInfo($"Mapa: {_catalog.Count} prefabs de peca no catalogo ({sw.ElapsedMilliseconds} ms); maiores: {_catalog.Largest(8)}.");
+                var entries = _catalog.Entries();
+                WriteInBackground(CatalogFile.Name, w => CatalogFile.Write(w, entries), CatalogSlot);
             }
             _scan = new PieceScan(_bySector(ZDOMan.instance), _map.Explored, _catalog);
         }
@@ -489,20 +514,7 @@ namespace ValheimMetrics.Map
                 foreach (var m in marks)
                     byKind[(int)m.Kind]++;
                 _piecesByKind = byKind;
-                ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    try
-                    {
-                        Directory.CreateDirectory(Dir);
-                        MapFiles.WriteAtomic(Path.Combine(Dir, MapFiles.Pieces), w => PiecesFile.Write(w, marks));
-                        Interlocked.Increment(ref _piecesWrites);
-                    }
-                    catch (Exception e)
-                    {
-                        Interlocked.Increment(ref _exportErrors);
-                        Plugin.Log.LogWarning($"Mapa: nao gravou {MapFiles.Pieces}: {e.Message}");
-                    }
-                });
+                WriteInBackground(MapFiles.Pieces, w => PiecesFile.Write(w, marks), PiecesSlot);
                 Plugin.Log.LogInfo($"Mapa: {marks.Count} pecas em {scan.Zdos} ZDOs, {scan.Seconds * 1000:0} ms em {scan.Frames} frames " +
                     $"(pior frame {scan.MaxFrameSeconds * 1000:0.0} ms).");
             }
@@ -693,7 +705,8 @@ namespace ValheimMetrics.Map
             w.Sample("valheim_map_terrain_work_seconds", _terrainSeconds);
             w.Family("valheim_map_file_writes_total", "counter", "Arquivos do site gravados, por arquivo.");
             w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref _exploredWrites), "file", "explored");
-            w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref _piecesWrites), "file", "pieces");
+            w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref BackgroundWrites[PiecesSlot]), "file", "pieces");
+            w.Sample("valheim_map_file_writes_total", Interlocked.Read(ref BackgroundWrites[CatalogSlot]), "file", "catalog");
             w.Family("valheim_map_export_errors_total", "counter", "Falhas ao gerar ou gravar os arquivos do site (detalhe no log).");
             w.Sample("valheim_map_export_errors_total", Interlocked.Read(ref _exportErrors));
             w.Family("valheim_map_pieces_next_timestamp_seconds", "gauge", "Proxima varredura de construcoes.");
