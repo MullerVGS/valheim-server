@@ -79,6 +79,12 @@ services:
       VALHEIM_ZDO_SEND_LIMIT_BYTES: ${VALHEIM_ZDO_SEND_LIMIT_BYTES:-}
       VALHEIM_STEAM_SEND_RATE_BYTES: ${VALHEIM_STEAM_SEND_RATE_BYTES:-}
 
+      # Limpeza horaria de assets (trava 0,7-0,9 s para liberar quase nada): 1 = espera o servidor
+      # esvaziar. Histerese de dono: on = peca so troca de dono quando sai do que o dono tem
+      # carregado; measure = como o jogo, contando o que seria segurado. Vazio = jogo. Ver README.
+      VALHEIM_DEFER_ASSET_UNLOAD: ${VALHEIM_DEFER_ASSET_UNLOAD:-}
+      VALHEIM_OWNER_HYSTERESIS: ${VALHEIM_OWNER_HYSTERESIS:-}
+
       # Icones nas placas (exige BEPINEX=true). Caminho, dentro do container, do catalogo gerado
       # por tools/sign-icons. Vazio = placa como o jogo faz. Ver README.
       VALHEIM_SIGN_ICONS_CATALOG: ${VALHEIM_SIGN_ICONS_CATALOG:-}

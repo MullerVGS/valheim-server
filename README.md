@@ -132,6 +132,25 @@ Conferir em `/metrics`: `valheim_server_target_frame_rate`, `valheim_zdo_send_li
 dos alvos `ZDOMan.SendZDOs#transpiler` e `ZSteamSocket.RegisterGlobalCallbacks#transpiler`. Rollback = apagar as variaveis e
 repetir o comando.
 
+### Travada horaria e troca de dono (opt-in)
+
+Duas travadas que o jogo produz sozinho, cada uma com uma variavel no `.env` (recriar o container):
+
+- `VALHEIM_DEFER_ASSET_UNLOAD=1`: de hora em hora o jogo chama `Resources.UnloadUnusedAssets`, que
+  no dedicado trava a thread 0,7-0,9 s para liberar quase nada. Com jogador online a limpeza espera
+  o servidor esvaziar e roda na hora em que ele fica vazio. Conferir em
+  `valheim_asset_unload_deferred_total`, `valheim_asset_unload_idle_runs_total` e no tempo de frame.
+- `VALHEIM_OWNER_HYSTERESIS=on|measure`: o servidor passa a posse de cada objeto para outro jogador
+  assim que ele sai da area ativa do dono (1,5 zona de 64 m a partir do centro da zona dele), mas o
+  cliente do dono segue carregando o objeto ate a distancia de simulacao dele (2 zonas no padrao).
+  Base sobre a borda de zona vira ping-pong: milhares de pecas trocam de dono a cada passo e cada
+  troca e reenviada a todos. Com `on`, pecas, baus, plantas e bichos domesticados so trocam de dono
+  quando saem do que o dono tem carregado; criatura selvagem e jogador seguem a regra do jogo. Com
+  `measure` o comportamento e o do jogo, e so conta o que seria segurado. Conferir em
+  `valheim_zdo_owner_changes_total{action,kind}`, `valheim_zdo_owner_kept_total{kind}` e
+  `valheim_player_simulation_distance_zones`. Se a replica falhar, o plugin volta sozinho ao metodo
+  do jogo (`valheim_exporter_patch_errors_total` sobe e o log explica).
+
 ### Icones nas placas (opt-in)
 
 A placa do jogo e um TextMeshPro com rich text, e o limite de 50 caracteres e so do campo de

@@ -75,4 +75,46 @@ public class TuningSettingsTests
         Assert.Equal(10240, s.ZdoSendLimitBytes);
         Assert.Equal(1048576, s.SteamSendRateBytes);
     }
+
+    [Fact]
+    public void Ajustes_de_assets_e_dono_desligados_por_padrao()
+    {
+        var s = Parse(new Dictionary<string, string>());
+
+        Assert.False(s.DeferAssetUnload);
+        Assert.Equal(OwnerHysteresisMode.Off, s.OwnerHysteresis);
+    }
+
+    [Theory]
+    [InlineData("on", OwnerHysteresisMode.On)]
+    [InlineData(" ON ", OwnerHysteresisMode.On)]
+    [InlineData("measure", OwnerHysteresisMode.Measure)]
+    [InlineData("off", OwnerHysteresisMode.Off)]
+    public void Le_o_modo_da_histerese(string value, OwnerHysteresisMode expected)
+    {
+        var s = Parse(new Dictionary<string, string> { ["VALHEIM_OWNER_HYSTERESIS"] = value });
+
+        Assert.Equal(expected, s.OwnerHysteresis);
+        Assert.Empty(s.Warnings);
+    }
+
+    [Theory]
+    [InlineData("VALHEIM_OWNER_HYSTERESIS", "1")]
+    [InlineData("VALHEIM_DEFER_ASSET_UNLOAD", "sim")]
+    public void Palavra_desconhecida_e_ignorada_com_aviso(string name, string value)
+    {
+        var s = Parse(new Dictionary<string, string> { [name] = value });
+
+        Assert.False(s.DeferAssetUnload);
+        Assert.Equal(OwnerHysteresisMode.Off, s.OwnerHysteresis);
+        Assert.Single(s.Warnings);
+    }
+
+    [Fact]
+    public void Um_liga_o_adiamento_de_assets()
+    {
+        var s = Parse(new Dictionary<string, string> { ["VALHEIM_DEFER_ASSET_UNLOAD"] = "1" });
+
+        Assert.True(s.DeferAssetUnload);
+    }
 }

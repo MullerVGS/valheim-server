@@ -18,7 +18,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.10.1";
+        public const string Version = "0.11.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -55,6 +55,7 @@ namespace ValheimMetrics
                 new AccessControl(),
                 new ChestMarks(),
                 new TrafficCollector(),
+                new TuningCollector(),
             };
             _installed = new bool[_collectors.Length];
             _collectSeconds = new double[_collectors.Length];

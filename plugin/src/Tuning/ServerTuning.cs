@@ -55,12 +55,16 @@ namespace ValheimMetrics.Tuning
                         transpiler: nameof(RegisterGlobalCallbacksTranspiler)))
                     Plugin.Log.LogInfo($"Taxa de envio do Steam: {rate} bytes/s");
             }
+
+            AssetUnload.Install(harmony, settings.DeferAssetUnload);
+            OwnerHandoff.Install(harmony, settings.OwnerHysteresis);
         }
 
         // O PresentManager so escreve Application.targetFrameRate quando o limite calculado muda:
         // se o jogo pediu os 30 antes do patch existir, ninguem mais pediria. O log sai uma vez.
         public static void OnFrame()
         {
+            AssetUnload.OnFrame();
             if (_fps is int fps && Application.targetFrameRate != fps)
             {
                 Application.targetFrameRate = fps;
