@@ -181,16 +181,16 @@ void main() {
       // nao cor de interface.
       float lum = dot(pc.rgb, vec3(0.299, 0.587, 0.114));
       vec3 sepia = mix(vec3(1.0), bg.rgb / max(max(bg.r, bg.g), max(bg.b, 1e-3)), 0.3);
-      vec3 painted = mix(vec3(lum), pc.rgb, 0.75) * sepia * (0.6 + 0.8 * g) * flatLight * 1.1;
-      col.rgb = mix(col.rgb, painted, small ? 0.5 : 0.72);
+      vec3 painted = mix(vec3(lum), pc.rgb, 0.75) * sepia * (0.6 + 0.8 * g) * flatLight * 1.2;
+      col.rgb = mix(col.rgb, painted, small ? 0.65 : 0.9);
     }
     col.rgb *= 1.0 - 0.3 * shade;
-    col.rgb = mix(col.rgb, vec3(0.07, 0.045, 0.028), ink * 0.6);
+    col.rgb = mix(col.rgb, vec3(0.07, 0.045, 0.028), ink * 0.75);
   }
 
   // Nuvens passando, ralas sobre as bases para nao esconder o que foi construido.
   float cloud = textureGrad(uCloud, p * 7.0 - uCloudOffset.xz, dFdx(vUv) * 7.0, dFdy(vUv) * 7.0).a;
-  col = mix(col, vec4(uLightColor * uSunColor.rgb, 1.0), cloud * (1.0 - 0.7 * settled));
+  col = mix(col, vec4(uLightColor * uSunColor.rgb, 1.0), cloud * (1.0 - 0.8 * settled));
 
   // Nevoa de guerra: o pergaminho, escurecendo para a borda do mundo.
   float f1 = smooth01(clamp(fogOwn * 2.0, 0.0, 1.0));
