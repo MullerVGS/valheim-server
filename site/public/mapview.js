@@ -58,6 +58,7 @@ export class MapView {
     this.pieces = null;
     this.settlements = null;
     this.dirty = true;
+    this.flight = null;
     this.resize = this.resize.bind(this);
     this.resize();
     this.bindInput();
@@ -141,6 +142,7 @@ export class MapView {
     let pinch = null;
     let press = null;
     map.addEventListener('pointerdown', (e) => {
+      this.flight = null;
       map.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       map.classList.add('dragging');
@@ -188,6 +190,7 @@ export class MapView {
       'wheel',
       (e) => {
         e.preventDefault();
+        this.flight = null;
         const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
         this.zoomAt(...this.local(e), Math.exp(delta * 0.0015));
       },
@@ -248,6 +251,50 @@ export class MapView {
     this.terrain = parseTerrain(terrainBuf);
     r.setTerrain(this.terrain, this.biomeTable);
     this.dirty = true;
+  }
+
+  // Recorte do mapa em outro lugar, sem segundo contexto WebGL: desenha a outra vista no mesmo canvas,
+  // copia o miolo e redesenha a vista atual antes de o navegador compor o quadro. null sem renderer.
+  snapshot(x, z, metersPerPixel, width, height) {
+    if (!this.renderer) return null;
+    const dpr = this.view.pixelRatio;
+    const out = document.createElement('canvas');
+    out.width = Math.round(width * dpr);
+    out.height = Math.round(height * dpr);
+    const t = performance.now() / 1000;
+    const env = { ...DAY, cloudOffset: [t * 0.0012, 0, t * 0.0007] };
+    this.renderer.draw({ ...this.view, x, z, metersPerPixel }, env, t);
+    const sw = Math.min(out.width, this.map.width);
+    const sh = Math.min(out.height, this.map.height);
+    out.getContext('2d').drawImage(this.map, (this.map.width - sw) / 2, (this.map.height - sh) / 2, sw, sh, 0, 0, out.width, out.height);
+    this.renderer.draw(this.view, env, t);
+    return out;
+  }
+
+  // Leva a vista ate (x, z) num voo curto; `mpp` ajusta o zoom no caminho. Resolve true ao chegar,
+  // false se o usuario pegou o mapa no meio.
+  flyTo(x, z, mpp = this.view.metersPerPixel, ms = 700) {
+    const from = { ...this.view };
+    const to = { x, z, metersPerPixel: MapView.clampMpp(mpp) };
+    // Longe, sobe um pouco no meio para o destino aparecer chegando.
+    const dist = Math.hypot(to.x - from.x, to.z - from.z);
+    const top = Math.max(from.metersPerPixel, to.metersPerPixel, Math.min(MAX_MPP, dist / Math.max(1, this.width) * 0.8));
+    const t0 = performance.now();
+    this.flight = t0;
+    let done;
+    const arrived = new Promise((resolve) => (done = resolve));
+    const step = (now) => {
+      if (this.flight !== t0) return done(false);
+      const k = Math.min(1, (now - t0) / ms);
+      const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      const base = from.metersPerPixel + (to.metersPerPixel - from.metersPerPixel) * e;
+      const lift = Math.sin(Math.PI * e) * Math.max(0, top - Math.max(from.metersPerPixel, to.metersPerPixel));
+      this.goTo(from.x + (to.x - from.x) * e, from.z + (to.z - from.z) * e, base + lift);
+      if (k < 1) requestAnimationFrame(step);
+      else done(true);
+    };
+    requestAnimationFrame(step);
+    return arrived;
   }
 
   // Desenha um icone do jogo centrado em (sx, sy).

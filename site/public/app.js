@@ -14,6 +14,8 @@ const LABELS_UNTIL_MPP = 9;
 // Baus aparecem so de perto; os achados da busca aparecem sempre.
 const CHESTS_UNTIL_MPP = 2.5;
 const PLAY_STEP_MS = 1400;
+// Recorte do par no cartao do portal: tamanho em px CSS e zoom.
+const PAIR_VIEW = { width: 272, height: 150, metersPerPixel: 1.2 };
 
 const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false };
 let state = null;
@@ -26,8 +28,10 @@ let trailData = null;
 let day = null;
 let dayPins = [];
 let hits = [];
-// Cartao aberto: { anchor: [x, z], render: () => Node }.
+// Cartao aberto: { anchor: [x, z], render: () => Node, portal? }.
 let card = null;
+// Portal sob o ponteiro: a linha ate o par aparece ja no hover.
+let hoveredPortal = null;
 // Busca nos baus: hash do item escolhido.
 let found = null;
 
@@ -94,6 +98,10 @@ function hover(sx, sy) {
   hudCoords.textContent = `x ${wx.toFixed(0)}, z ${wz.toFixed(0)}`;
   const hit = hitAt(sx, sy);
   mapView.map.classList.toggle('pointing', !!hit?.card);
+  if ((hit?.portal ?? null) !== hoveredPortal) {
+    hoveredPortal = hit?.portal ?? null;
+    mapView.invalidate();
+  }
   if (!hit) return hideTooltip();
   const tip = $('tooltip');
   tip.replaceChildren(el('strong', { text: hit.title }), ...hit.lines.flatMap((l) => [el('span', { text: l }), el('br')]));
@@ -107,19 +115,24 @@ function hover(sx, sy) {
 
 function hideTooltip() {
   $('tooltip').hidden = true;
+  if (hoveredPortal) {
+    hoveredPortal = null;
+    mapView.invalidate();
+  }
 }
 
 function click(sx, sy) {
   hideTooltip();
   const hit = hitAt(sx, sy);
   if (!hit) return closeCard();
-  openCard(hit.anchor ?? mapView.toWorld(sx, sy), hit.card ?? (() => simpleCard(hit)));
+  openCard(hit.anchor ?? mapView.toWorld(sx, sy), hit.card ?? (() => simpleCard(hit)), hit.portal);
 }
 
 // ---------- cartao ----------
 
-function openCard(anchor, render) {
-  card = { anchor, render };
+function openCard(anchor, render, portal = null) {
+  card = { anchor, render, portal };
+  mapView.invalidate();
   const box = $('card');
   box.replaceChildren(
     el('button', { class: 'card-close', type: 'button', 'aria-label': 'Fechar', onclick: closeCard, text: '×' }),
@@ -130,12 +143,13 @@ function openCard(anchor, render) {
 }
 
 function closeCard() {
+  if (card?.portal) mapView.invalidate();
   card = null;
   $('card').hidden = true;
 }
 
 function refreshCard() {
-  if (card) openCard(card.anchor, card.render);
+  if (card) openCard(card.anchor, card.render, card.portal);
 }
 
 // Acima da coisa clicada, sem sair da tela. No celular o CSS prende o cartao embaixo.
@@ -193,6 +207,104 @@ function baseCard(g) {
     el('dl', { class: 'card-stats' }, rows.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: v })))),
     day ? el('p', { class: 'sub', text: `Como estava em ${day.slice(8, 10)}/${day.slice(5, 7)}.` }) : null,
     cardLink(baseHref(g), 'Página da base'));
+}
+
+// ---------- portais ----------
+
+const distanceText = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
+
+// O plugin manda onde o par esta (arredondado a 1 m); o par e o portal da lista naquele ponto.
+function pairOf(p) {
+  if (!p.target) return null;
+  const [tx, tz] = p.target;
+  return state?.portals.find((q) => q !== p && Math.abs(q.x - tx) <= 1.5 && Math.abs(q.z - tz) <= 1.5) ?? { x: tx, z: tz, tag: p.tag, connected: true, target: [p.x, p.z] };
+}
+
+function placeName(x, z) {
+  const g = mapView.settlements && baseAt(mapView.settlements, x, z, BASE_MARGIN);
+  return g && g.count >= BASE_MIN_PIECES ? baseName(g, state?.pins, world) : null;
+}
+
+function portalHit(p, sx, sy, r) {
+  const pair = pairOf(p);
+  return {
+    sx, sy, r, title: p.tag || 'Portal sem nome',
+    lines: [pair ? `par a ${distanceText(Math.hypot(pair.x - p.x, pair.z - p.z))}` : 'sem par'],
+    anchor: [p.x, p.z],
+    portal: p,
+    card: () => portalCard(p),
+  };
+}
+
+// Recorte do mapa em volta do par, com o portal marcado no meio.
+function pairPreview(pair) {
+  const { width, height, metersPerPixel } = PAIR_VIEW;
+  const shot = mapView.snapshot(pair.x, pair.z, metersPerPixel, width, height);
+  if (!shot) return el('div', { class: 'pair-shot empty', text: 'O mapa ainda está abrindo.' });
+  const ctx = shot.getContext('2d');
+  const dpr = shot.width / width;
+  const img = mapView.icons.portal;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, 17, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(242,163,58,0.22)';
+  ctx.fill();
+  ctx.strokeStyle = '#f2a33a';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  if (img) {
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 3;
+    const k = 24 / Math.max(img.width, img.height);
+    ctx.drawImage(img, width / 2 - (img.width * k) / 2, height / 2 - (img.height * k) / 2, img.width * k, img.height * k);
+  }
+  shot.className = 'pair-shot';
+  shot.style.aspectRatio = `${width} / ${height}`;
+  return shot;
+}
+
+function portalCard(p) {
+  const pair = pairOf(p);
+  const here = placeName(p.x, p.z);
+  const head = cardHead(p.tag || 'Portal sem nome', here ? `em ${here}` : `${Math.round(p.x)}, ${Math.round(p.z)}`);
+  if (!pair) return el('div', {}, head, el('p', { class: 'sub', text: 'Sem par: nenhum outro portal com esse nome.' }));
+  const there = placeName(pair.x, pair.z);
+  const go = async () => {
+    closeCard();
+    const arrived = await mapView.flyTo(pair.x, pair.z, Math.min(mapView.view.metersPerPixel, 1.5));
+    if (arrived) openCard([pair.x, pair.z], () => portalCard(pair), pair);
+  };
+  return el('div', {},
+    head,
+    el('button', { class: 'pair', type: 'button', onclick: go, 'aria-label': `Ir para o portal par${there ? ` em ${there}` : ''}` },
+      pairPreview(pair),
+      el('span', { class: 'pair-caption' },
+        el('span', { text: there ? `Par em ${there}` : `Par em ${Math.round(pair.x)}, ${Math.round(pair.z)}` }),
+        el('span', { class: 'meta', text: distanceText(Math.hypot(pair.x - p.x, pair.z - p.z)) }))),
+    el('p', { class: 'sub', text: 'Clique no recorte para ir até o par.' }));
+}
+
+// Linha entre o portal e o par: tinta tracejada com fio claro por baixo, como as rotas do mapa.
+function drawPortalLink(ctx, mv, p) {
+  const pair = pairOf(p);
+  if (!pair) return;
+  const [ax, ay] = mv.toScreen(p.x, p.z);
+  const [bx, by] = mv.toScreen(pair.x, pair.z);
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.strokeStyle = 'rgba(255,245,225,0.6)';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.setLineDash([10, 7]);
+  ctx.strokeStyle = '#5b1f10';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.restore();
+  return pair;
 }
 
 function chestCard(c) {
@@ -293,12 +405,21 @@ function drawOverlay(ctx, mv) {
       hits.push({ sx, sy, r: iconSize * 0.4, title: 'Cama', lines: [b.owner ? `de ${b.owner}` : ''].filter(Boolean), anchor: [b.x, b.z] });
     }
   }
-  if (layers.portals) {
-    for (const p of day ? [] : state.portals) {
+  // O portal aberto no cartao e o do hover ligam ao par, mesmo com a camada desligada (voo ate o par).
+  const linked = new Set(day ? [] : [card?.portal, hoveredPortal].filter(Boolean));
+  const ends = [];
+  for (const p of linked) {
+    const pair = drawPortalLink(ctx, mv, p);
+    if (pair) ends.push(p, pair);
+  }
+  if (layers.portals || ends.length) {
+    const shown = layers.portals ? (day ? [] : state.portals) : ends;
+    for (const p of new Set(shown)) {
       const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
-      mv.icon('portal', sx, sy, iconSize * 0.8, p.connected ? 1 : 0.55);
-      hits.push({ sx, sy, r: iconSize * 0.4, title: p.tag || 'Portal', lines: [p.connected ? 'conectado' : 'sem par'], anchor: [p.x, p.z] });
+      const lit = ends.includes(p);
+      mv.icon('portal', sx, sy, iconSize * (lit ? 1 : 0.8), p.connected || lit ? 1 : 0.55);
+      hits.push(portalHit(p, sx, sy, iconSize * 0.4));
     }
   }
 
