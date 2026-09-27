@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos de entrada</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --surface: #fffdf8; --line: #ddd5c6; --text: #231f1a; --muted: #6e6557;
+    --accent: #9a5b13; --accent-text: #fff; --ok: #2f6b3a; --warn-bg: #fbeedd;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16140f; --surface: #211e18; --line: #3a342a; --text: #eee7da; --muted: #a79d8c;
+      --accent: #d99436; --accent-text: #1a1406; --ok: #7cc48a; --warn-bg: #2d2416;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 32px 0 10px; }
+  .sub { color: var(--muted); margin: 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .card + .card { margin-top: 8px; }
+  .pending .card { background: var(--warn-bg); }
+  .who { flex: 1 1 220px; min-width: 0; }
+  .name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+  .ticket { color: var(--accent); font-weight: 700; margin-right: 6px; }
+  .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .meta a { color: inherit; }
+  .actions { display: flex; gap: 8px; }
+  button {
+    font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: default; }
+  .empty { color: var(--muted); padding: 14px 0; }
+  .list .card { padding: 10px 16px; }
+  .status { min-height: 20px; margin-top: 16px; font-size: 14px; color: var(--ok); }
+  .status.err { color: #c0392b; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 28px; }
+  code { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pedidos de entrada</h1>
+  <p class="sub">Quem tentou entrar no servidor e foi barrado pela whitelist.</p>
+
+  <section class="pending" id="pending" aria-live="polite"></section>
+  <div class="status" id="status" role="status"></div>
+
+  <h2>Na whitelist</h2>
+  <section class="list" id="permitted"></section>
+
+  <p class="hint">No jogo: <code>/unban 3</code> libera o pedido #3 e <code>/banned</code> lista os pedidos.</p>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let busy = false;
+
+  function ago(now, t) {
+    if (!t) return "nunca visto";
+    const s = Math.max(0, now - t);
+    if (s < 60) return "agora";
+    if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+    if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+    return `há ${Math.floor(s / 86400)} d`;
+  }
+
+  function el(tag, props, ...kids) {
+    const node = Object.assign(document.createElement(tag), props || {});
+    for (const k of kids) if (k != null) node.append(k);
+    return node;
+  }
+
+  function profile(id) {
+    return el("a", { href: `https://steamcommunity.com/profiles/${encodeURIComponent(id)}`, target: "_blank", rel: "noopener", textContent: id });
+  }
+
+  function render(state) {
+    const pending = $("pending");
+    pending.replaceChildren();
+    if (!state.pending || state.pending.length === 0) {
+      pending.append(el("p", { className: "empty", textContent: "Ninguém esperando." }));
+    }
+    for (const p of state.pending || []) {
+      const tries = p.denied === 1 ? "1 tentativa" : `${p.denied} tentativas`;
+      pending.append(el("div", { className: "card" },
+        el("div", { className: "who" },
+          el("div", { className: "name" }, el("span", { className: "ticket", textContent: `#${p.ticket}` }), p.name || "(sem nome)"),
+          el("div", { className: "meta" }, profile(p.steamId), ` · ${tries} · ${ago(state.now, p.lastDenied)}`)),
+        el("div", { className: "actions" },
+          el("button", { className: "primary", textContent: "Liberar", onclick: () => act("permit", p) }),
+          el("button", { textContent: "Ignorar", onclick: () => act("dismiss", p) }))));
+    }
+
+    const permitted = $("permitted");
+    permitted.replaceChildren();
+    if (!state.permitted || state.permitted.length === 0) {
+      permitted.append(el("p", { className: "empty", textContent: "Whitelist vazia: qualquer um entra." }));
+    }
+    const list = [...(state.permitted || [])].sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    for (const p of list) {
+      permitted.append(el("div", { className: "card" },
+        el("div", { className: "who" },
+          el("div", { className: "name", textContent: p.name || "(nome desconhecido)" }),
+          el("div", { className: "meta" }, profile(p.steamId), ` · ${ago(state.now, p.lastSeen)}`))));
+    }
+  }
+
+  function say(text, err) {
+    const s = $("status");
+    s.textContent = text;
+    s.className = err ? "status err" : "status";
+  }
+
+  async function load() {
+    if (busy) return;
+    try {
+      const res = await fetch("api/state", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (e) {
+      say(`Não consegui ler o servidor (${e.message}).`, true);
+    }
+  }
+
+  async function act(action, p) {
+    busy = true;
+    document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    try {
+      const res = await fetch(`api/${action}?id=${encodeURIComponent(p.steamId)}`, {
+        method: "POST",
+        headers: { "X-Valheim-Access": "1" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body.state && body.state.pending) render(body.state);
+      say(body.message ? body.message.charAt(0).toUpperCase() + body.message.slice(1) + "." : `HTTP ${res.status}`, !body.ok);
+    } catch (e) {
+      say(`Falhou: ${e.message}`, true);
+    } finally {
+      busy = false;
+      document.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    }
+  }
+
+  load();
+  setInterval(load, 5000);
+</script>
+</body>
+</html>

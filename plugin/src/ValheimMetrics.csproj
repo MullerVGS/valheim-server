@@ -22,4 +22,8 @@
     <Reference Include="Mono.Cecil" HintPath="$(BepInExCore)/Mono.Cecil.dll" Private="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Access/page.html" LogicalName="ValheimMetrics.Access.page.html" />
+  </ItemGroup>
+
 </Project>

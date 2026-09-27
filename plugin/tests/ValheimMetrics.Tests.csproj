@@ -15,6 +15,13 @@
     <Compile Include="../src/Signs/SignIconRules.cs" />
     <Compile Include="../src/Signs/SignTextRules.cs" />
     <Compile Include="../src/Experience/LagReportText.cs" />
+    <Compile Include="../src/Access/AccessBook.cs" />
+    <Compile Include="../src/Access/AccessState.cs" />
+    <Compile Include="../src/Chests/SlotMarks.cs" />
+    <Compile Include="../src/Chests/MarkCodec.cs" />
+    <Compile Include="../src/Chests/Reconciler.cs" />
+    <Compile Include="../src/Chests/ChestItems.cs" />
+    <Compile Include="../src/Chests/ChestKeeper.cs" />
   </ItemGroup>
 
   <ItemGroup>

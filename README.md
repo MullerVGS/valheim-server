@@ -208,6 +208,43 @@ Conferir em `/metrics`: `valheim_sign_icons_catalog_entries`, `valheim_sign_icon
 `valheim_exporter_patch_ok{target="ZDO.Deserialize"}`.
 Rollback = apagar a variavel e recriar; as placas ja desenhadas ficam como estao.
 
+### Pedidos de entrada na whitelist
+
+Com `permittedlist.txt` preenchido, so os SteamIDs dele entram, e quem esta fora recebe "not in
+whitelist" sem o admin ficar sabendo quem era. O plugin registra cada entrada barrada com nome e
+SteamID (o jogo recebe os dois antes de recusar), numera como pedido, avisa os admins online no
+canto da tela e no console F5, e deixa liberar de duas formas:
+
+- **No jogo, sem mod no cliente**: `/unban <numero>` no chat ou no F5 (aceita tambem SteamID ou
+  comeco do nome). `unban` e comando de rede que todo cliente manda ao servidor; argumento que nao
+  e pedido aberto segue para o unban de verdade. `/banned` lista os pedidos junto dos banidos. Chat
+  comum nao serve de comando: o cliente so envia a fala para os outros jogadores, entao com o admin
+  sozinho ela nunca chega ao servidor.
+- **Na pagina**, com `VALHEIM_ACCESS_PORT` no `.env` (ex.: `9781`): lista pedidos (Liberar /
+  Ignorar) e a whitelist com o ultimo nome de cada SteamID. **Nao tem login.** A porta nao e
+  publicada no host; exponha so atras de um proxy com autenticacao.
+
+Liberar grava no `permittedlist.txt`, que o jogo rele sozinho a cada ~10 s. O registro fica em
+`/config/access-requests.tsv` ao lado das listas. Whitelist vazia deixa todo mundo entrar, e ai
+nada vira pedido. Conferir em `/metrics`: `valheim_access_pending`, `valheim_access_denied_total`
+e `valheim_exporter_patch_ok` dos alvos `ZNet.IsAllowed`, `ZNet.RPC_Unban` e `ZNet.RPC_PrintBanned`.
+
+### Slots de bau reservados (opt-in)
+
+`VALHEIM_SLOT_MARKS=1` no `.env`. Um slot marcado guarda o lugar do item: quando a pilha sai inteira, fica
+uma pilha de **zero** no slot, e o "Guardar pilhas" (place stacks) do jogo, sem mod, enche aquele slot,
+porque so pede um item de mesmo nome com espaco.
+
+- **Marcar** exige o mod de cliente Ghost Stacks (Alt + clique no slot). Quem nao marca joga vanilla.
+- As marcas ficam no ZDO do bau, chave `valheim-server.slot_marks` (`1|x,y,prefab,qualidade,nivel|...`).
+- O servidor recoloca a pilha de zero ~3 s depois que qualquer jogador fecha o bau (espera `InUse` = 0 e o
+  ZDO parado), tira pilha de zero sem marca e desfaz a marca se outro item ocupou o slot. Com o plugin
+  desligado as marcas ficam paradas; a varredura do boot pega o atraso.
+- So empilhaveis: pilha zero de arma seria copia usavel. Lapide e saco de loot ficam de fora.
+- Para cliente vanilla a pilha de zero e item comum: arrastar ou "Pegar tudo" leva um item `0` para o
+  inventario, que nao cai no chao e some no proximo place stacks.
+- Formato de item diferente de 108..109 (update do jogo) nao e mexido: conta em `valheim_slot_marks_skipped_total`.
+
 ## Dados
 
 Mundo e config em volumes nomeados (`valheim-server_config`, `valheim-server_server`), nunca no repo.
@@ -221,7 +258,7 @@ do backup, que fecha em cima do marcador.
 
 ## Nao versionar
 
-`.env`, save do mundo (`worlds_local/`, `.db`/`.fwl`/`.fwl2`), `adminlist.txt`/`permittedlist.txt` (SteamID64 e identificador de terceiro).
+`.env`, save do mundo (`worlds_local/`, `.db`/`.fwl`/`.fwl2`), `adminlist.txt`/`permittedlist.txt`/`access-requests.tsv` (SteamID64 e identificador de terceiro).
 
 ## Firewall
 

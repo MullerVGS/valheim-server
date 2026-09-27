@@ -79,6 +79,15 @@ services:
       # por tools/sign-icons. Vazio = placa como o jogo faz. Ver README.
       VALHEIM_SIGN_ICONS_CATALOG: ${VALHEIM_SIGN_ICONS_CATALOG:-}
 
+      # Pagina de pedidos de entrada na whitelist (exige BEPINEX=true). Porta HTTP dentro do
+      # container, sem login e sem publicar: so atras de proxy com autenticacao. Vazio = sem pagina;
+      # aviso e /unban no jogo funcionam igual. Ver README.
+      VALHEIM_ACCESS_PORT: ${VALHEIM_ACCESS_PORT:-}
+
+      # Slots de bau reservados (exige BEPINEX=true): 1 = o servidor recoloca a pilha de zero no slot
+      # marcado quando o bau fecha. Marcar exige o mod de cliente; o resto do grupo joga vanilla. Ver README.
+      VALHEIM_SLOT_MARKS: ${VALHEIM_SLOT_MARKS:-}
+
     volumes:
       # config = mundos, listas, backups. E o que importa.
       - config:/config

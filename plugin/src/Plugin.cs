@@ -4,6 +4,8 @@ using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
+using ValheimMetrics.Access;
+using ValheimMetrics.Chests;
 using ValheimMetrics.Collectors;
 using ValheimMetrics.Exposition;
 using ValheimMetrics.Signs;
@@ -15,7 +17,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.8.0";
+        public const string Version = "0.9.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -49,6 +51,8 @@ namespace ValheimMetrics
                 new RpcCollector(),
                 new ExperienceCollector(),
                 new SignIcons(),
+                new AccessControl(),
+                new ChestMarks(),
             };
             _installed = new bool[_collectors.Length];
             _collectSeconds = new double[_collectors.Length];
@@ -85,6 +89,7 @@ namespace ValheimMetrics
         void OnDestroy()
         {
             _server?.Stop();
+            AccessControl.Stop();
             _harmony?.UnpatchSelf();
         }
 
@@ -94,6 +99,8 @@ namespace ValheimMetrics
             ServerCollector.OnFrame(now, Time.unscaledDeltaTime);
             ServerTuning.OnFrame();
             SignIcons.OnFrame(now);
+            AccessControl.OnFrame();
+            ChestMarks.OnFrame(now);
             if (now < _nextSnapshot)
                 return;
             _nextSnapshot = now + 1;
