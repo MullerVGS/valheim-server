@@ -452,12 +452,13 @@ async function pollHistory() {
 async function loadWorld(r, date) {
   const base = date ? `data/days/${date}/` : 'data/';
   const [terrainBuf, piecesBuf] = await Promise.all([
-    fetch(base + 'terrain.bin').then((res) => {
+    // Sempre revalida: a Cloudflare manda o navegador guardar .bin por 4 h.
+    fetch(base + 'terrain.bin', { cache: 'no-cache' }).then((res) => {
       if (!res.ok) throw new Error(`terreno ${res.status}`);
       return res.arrayBuffer();
     }),
     // Sem construcoes o mapa abre do mesmo jeito.
-    fetch(base + 'pieces.bin')
+    fetch(base + 'pieces.bin', { cache: 'no-cache' })
       .then((res) => (res.ok ? res.arrayBuffer() : null))
       .catch(() => null),
   ]);
