@@ -4,11 +4,13 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { Archive } from './archive.mjs';
 import { MapData, maskTerrain } from './terrain.mjs';
+import { LiveWorld } from './world.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -31,6 +33,7 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.otf': 'font/otf',
   '.svg': 'image/svg+xml',
   '.bin': 'application/octet-stream',
@@ -120,6 +123,65 @@ async function buildHistory() {
   return { online: series(online), fps: series(fps) };
 }
 
+// Nome de jogador dentro de um seletor PromQL. So chega aqui nome que o Victoria ja conhece.
+const label = (name) => `"${name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+// Minutos online: uma amostra a cada `every` minutos enquanto o ping do jogador existe. O Victoria
+// recusa subconsulta com mais de 100 mil pontos, entao janela longa vai de 5 em 5.
+const minutesOnline = (sel, range, every = 1) =>
+  `count_over_time((valheim_player_ping_seconds{${sel}} > -1)[${range}:${every}m]) * ${every}`;
+
+async function buildPlayers() {
+  const [last, first, week] = await Promise.all([
+    query('max by (player) (tlast_over_time(valheim_player_ping_seconds[180d]))'),
+    query('min by (player) (tfirst_over_time(valheim_player_ping_seconds[180d]))'),
+    query(`sum by (player) (${minutesOnline('', '7d')})`),
+  ]);
+  const players = new Map();
+  const get = (name) => {
+    if (!players.has(name)) players.set(name, { name, firstSeen: null, lastSeen: null, minutes7d: 0 });
+    return players.get(name);
+  };
+  for (const r of last) get(r.metric.player).lastSeen = Math.round(Number(r.value[1]) * 1000);
+  for (const r of first) get(r.metric.player).firstSeen = Math.round(Number(r.value[1]) * 1000);
+  for (const r of week) get(r.metric.player).minutes7d = Number(r.value[1]);
+  return [...players.values()].filter((p) => p.name).sort((a, b) => b.lastSeen - a.lastSeen);
+}
+
+async function buildPlayer(name) {
+  const sel = `player=${label(name)}`;
+  const [hourly, total] = await Promise.all([
+    queryRange(`sum(${minutesOnline(sel, '1h')})`, 30 * 86400, 3600),
+    query(`sum(${minutesOnline(sel, '180d', 5)})`),
+  ]);
+  return {
+    hourly: (hourly[0]?.values ?? []).map(([t, v]) => [t, Number(v)]).filter(([, v]) => v > 0),
+    minutesTotal: num(total) ?? 0,
+  };
+}
+
+// Posicao ao longo do tempo, por jogador: [[t, x, z]] no passo pedido. O jogador offline some da serie.
+async function trails(seconds, step, name) {
+  const who = name ? `player=${label(name)},` : '';
+  const rows = await queryRange(`valheim_player_position_meters{${who}axis=~"x|z"}`, seconds, step);
+  const byPlayer = new Map();
+  for (const r of rows) {
+    const p = r.metric.player;
+    if (!byPlayer.has(p)) byPlayer.set(p, new Map());
+    const points = byPlayer.get(p);
+    for (const [t, v] of r.values) {
+      if (!points.has(t)) points.set(t, [t, null, null]);
+      points.get(t)[r.metric.axis === 'x' ? 1 : 2] = Math.round(Number(v) * 10) / 10;
+    }
+  }
+  return {
+    step,
+    players: [...byPlayer].map(([player, points]) => ({
+      name: player,
+      points: [...points.values()].filter((p) => p[1] !== null && p[2] !== null).sort((a, b) => a[0] - b[0]),
+    })),
+  };
+}
+
 function cached(ttl, build) {
   let value = null;
   let at = 0;
@@ -139,14 +201,35 @@ function cached(ttl, build) {
   };
 }
 
+// Mesmo cache, por chave (jogador, janela de tempo). Poucas chaves vivas: jogadores x janelas fixas.
+function cachedBy(ttl, build) {
+  const entries = new Map();
+  return (key, ...args) => {
+    const hit = entries.get(key);
+    if (hit && Date.now() - hit.at < ttl) return hit.value;
+    const value = build(...args).then((v) => JSON.stringify(v));
+    value.catch(() => entries.delete(key));
+    if (entries.size > 200) entries.clear();
+    entries.set(key, { at: Date.now(), value });
+    return value;
+  };
+}
+
 // Dados do mapa em memoria, refeitos quando os arquivos mudam no disco.
 const mapData = new MapData({ mapDir: MAP_DIR, dataDir: DATA, saveDir: SAVE_DIR });
+// Baus, camas e construtores do save ao vivo, para as paginas.
+const liveWorld = new LiveWorld({ saveDir: SAVE_DIR, mapDir: MAP_DIR });
 
 async function refreshMap() {
   try {
     await mapData.refresh();
   } catch (err) {
     console.error('mapa:', err.message);
+  }
+  try {
+    await liveWorld.refresh();
+  } catch (err) {
+    console.error('mundo:', err.message);
   }
 }
 
@@ -158,6 +241,7 @@ async function runArchive() {
   try {
     await archive.run();
     dayTerrain.clear();
+    dayPieces.clear();
   } catch (err) {
     console.error('historico:', err.message);
   }
@@ -193,6 +277,38 @@ async function dayPins(date) {
   }));
 }
 
+// Pecas de cada dia (so x e z), para contar quantas caem na area de uma base.
+const dayPieces = new Map();
+async function dayPieceXZ(date) {
+  if (!dayPieces.has(date)) {
+    const gz = await archive.piecesGz(date);
+    let xz = null;
+    if (gz) {
+      const raw = gunzipSync(gz);
+      const n = raw.readUInt32LE(4);
+      xz = new Float32Array(n * 2);
+      for (let k = 0; k < n; k++) {
+        xz[k * 2] = raw.readFloatLE(8 + k * 29);
+        xz[k * 2 + 1] = raw.readFloatLE(12 + k * 29);
+      }
+    }
+    dayPieces.set(date, xz);
+  }
+  return dayPieces.get(date);
+}
+
+async function daysInArea(x0, z0, x1, z1) {
+  const out = [];
+  for (const d of [...archive.days].reverse()) {
+    const xz = await dayPieceXZ(d.date);
+    if (!xz) continue;
+    let count = 0;
+    for (let k = 0; k < xz.length; k += 2) if (xz[k] >= x0 && xz[k] <= x1 && xz[k + 1] >= z0 && xz[k + 1] <= z1) count++;
+    out.push({ date: d.date, pieces: count });
+  }
+  return out;
+}
+
 async function dayTerrainPacked(date) {
   if (!dayTerrain.has(date)) {
     if (!mapData.full) return null;
@@ -225,6 +341,17 @@ function sendPacked(req, res, packed) {
 
 const state = cached(STATE_TTL_MS, buildState);
 const history = cached(HISTORY_TTL_MS, buildHistory);
+const players = cached(HISTORY_TTL_MS, buildPlayers);
+const player = cachedBy(HISTORY_TTL_MS, buildPlayer);
+const trail = cachedBy(30000, trails);
+
+// Janelas de rastro aceitas, em horas, e o passo de cada uma (segundos).
+const TRAIL_STEPS = { 1: 10, 6: 30, 24: 60, 72: 180, 168: 300 };
+
+async function knownPlayer(name) {
+  if (!name) return false;
+  return JSON.parse(await players()).some((p) => p.name === name);
+}
 
 // Arquivo com revalidacao por ETag: o navegador pergunta sempre e so baixa o que mudou.
 async function sendFile(req, res, path) {
@@ -253,22 +380,26 @@ async function sendFile(req, res, path) {
 // A Cloudflare troca o no-cache de .js/.css por 4 h de cache no navegador; so o HTML chega sempre
 // fresco. Entao a pagina aponta para o codigo com a versao no endereco, e os modulos importados entre
 // si passam pelo mesmo mapa de importacao.
-const CODE = ['app.js', 'mapgl.js', 'pieces.js', 'style.css'];
-
-async function sendPage(res) {
-  let html = await readFile(join(PUBLIC, 'index.html'), 'utf8');
+// Paginas: todas usam <base href="/">, entao /jogador/<nome> e /base/<x>,<z> acham o codigo na raiz.
+async function sendPage(res, page) {
+  let html = await readFile(join(PUBLIC, page), 'utf8');
   const v = {};
-  for (const name of CODE) {
+  for (const name of (await readdir(PUBLIC)).filter((n) => n.endsWith('.js') || n.endsWith('.css'))) {
     v[name] = createHash('sha1').update(await readFile(join(PUBLIC, name))).digest('hex').slice(0, 10);
   }
-  const imports = Object.fromEntries(CODE.filter((n) => n.endsWith('.js')).map((n) => [`./${n}`, `./${n}?v=${v[n]}`]));
+  const imports = Object.fromEntries(Object.keys(v).filter((n) => n.endsWith('.js')).map((n) => [`./${n}`, `./${n}?v=${v[n]}`]));
   html = html
-    .replace('href="style.css"', `href="style.css?v=${v['style.css']}"`)
-    .replace('<script type="module" src="app.js"></script>',
-      `<script type="importmap">${JSON.stringify({ imports })}</script>\n  <script type="module" src="app.js?v=${v['app.js']}"></script>`);
+    .replace(/href="([\w-]+\.css)"/g, (m, n) => (v[n] ? `href="${n}?v=${v[n]}"` : m))
+    .replace(/<script type="module" src="([\w-]+\.js)"><\/script>/,
+      (m, n) => `<script type="importmap">${JSON.stringify({ imports })}</script>\n  <script type="module" src="${n}?v=${v[n]}"></script>`);
   res.writeHead(200, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' });
   res.end(html);
 }
+
+const sendText = (res, body) => {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(body);
+};
 
 function notFound(res) {
   res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -293,6 +424,25 @@ const server = createServer(async (req, res) => {
       return res.end('ok');
     }
     if (url.pathname === '/api/days') return sendJson(res, archive ? archive.days : []);
+    if (url.pathname === '/api/world') return sendPacked(req, res, liveWorld.json);
+    if (url.pathname === '/api/players') return sendText(res, await players());
+    if (url.pathname === '/api/player') {
+      const name = url.searchParams.get('name');
+      if (!(await knownPlayer(name))) return notFound(res);
+      return sendText(res, await player(name, name));
+    }
+    if (url.pathname === '/api/trails') {
+      const hours = Number(url.searchParams.get('hours'));
+      const step = TRAIL_STEPS[hours];
+      const name = url.searchParams.get('name') || null;
+      if (!step || (name && !(await knownPlayer(name)))) return notFound(res);
+      return sendText(res, await trail(`${hours}|${name ?? ''}`, hours * 3600, step, name));
+    }
+    if (url.pathname === '/api/days/area') {
+      const box = ['x0', 'z0', 'x1', 'z1'].map((k) => Number(url.searchParams.get(k)));
+      if (!archive || box.some((v) => !Number.isFinite(v))) return notFound(res);
+      return sendJson(res, await daysInArea(...box));
+    }
     const day = url.pathname.match(/^\/(?:api|data)\/days\/(\d{4}-\d{2}-\d{2})\/(pins|terrain\.bin|pieces\.bin)$/);
     if (day) {
       const [, date, what] = day;
@@ -304,7 +454,9 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === '/data/terrain.bin') return sendPacked(req, res, mapData.terrain);
     if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, mapData.pieces);
-    if (url.pathname === '/' || url.pathname === '/index.html') return await sendPage(res);
+    if (url.pathname === '/' || url.pathname === '/index.html') return await sendPage(res, 'index.html');
+    if (url.pathname.startsWith('/jogador/')) return await sendPage(res, 'player.html');
+    if (url.pathname.startsWith('/base/')) return await sendPage(res, 'base.html');
     const rel = decodeURIComponent(url.pathname.slice(1));
     const path = inside(PUBLIC, rel);
     if (!path) return notFound(res);

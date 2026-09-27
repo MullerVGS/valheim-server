@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <base href="/">
   <title>Valheim</title>
   <meta name="description" content="Mapa e estado do servidor de Valheim Valheim">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,6 +16,7 @@
     <canvas id="map" aria-label="Mapa do mundo"></canvas>
     <canvas id="overlay" aria-hidden="true"></canvas>
     <div id="tooltip" role="tooltip" hidden></div>
+    <div id="card" class="card" role="dialog" aria-live="polite" hidden></div>
     <div id="loading">Abrindo o mapa…</div>
   </main>
 
@@ -29,6 +31,10 @@
       <section>
         <h2>Vikings no mundo</h2>
         <ul id="players" class="players"></ul>
+        <details id="others-wrap" class="others" hidden>
+          <summary>Outros vikings</summary>
+          <ul id="others"></ul>
+        </details>
         <figure class="spark">
           <svg id="spark-online" viewBox="0 0 240 44" preserveAspectRatio="none" role="img" aria-label="Jogadores online nas últimas 24 horas"></svg>
           <figcaption>jogadores nas últimas 24 h</figcaption>
@@ -46,11 +52,24 @@
         </dl>
       </section>
       <section>
+        <h2>Procurar nos baús</h2>
+        <div class="search">
+          <label class="sr-only" for="search">Item</label>
+          <input id="search" type="search" placeholder="ferro, mel, madeira…" autocomplete="off" spellcheck="false">
+          <button id="search-clear" class="search-clear" type="button" aria-label="Limpar busca" hidden>×</button>
+          <ul id="suggestions" class="suggestions" hidden></ul>
+        </div>
+        <div id="search-results"></div>
+      </section>
+      <section>
         <h2>Linha do tempo</h2>
-        <label class="timeline">
-          <span class="sr-only">Dia do mapa</span>
-          <select id="day"><option value="">Agora (ao vivo)</option></select>
-        </label>
+        <div class="timeline">
+          <button id="day-play" class="play" type="button" aria-label="Tocar a linha do tempo">▶</button>
+          <label class="sr-only" for="day">Dia do mapa</label>
+          <input id="day" type="range" min="0" max="0" step="1" value="0">
+        </div>
+        <p class="day-label"><span id="day-label">Agora (ao vivo)</span></p>
+        <div id="growth" class="growth" aria-label="Construções por dia"></div>
         <p id="day-info" class="day-info"></p>
       </section>
       <section>
@@ -61,7 +80,16 @@
           <label><input type="checkbox" data-layer="labels" checked> <span class="aa">Aa</span> Nomes</label>
           <label><input type="checkbox" data-layer="portals"> <img src="game/icons/portal.png" alt=""> Portais</label>
           <label><input type="checkbox" data-layer="beds"> <img src="game/icons/bed.png" alt=""> Camas</label>
+          <label><input type="checkbox" data-layer="chests"> <span class="chest-swatch" aria-hidden="true"></span> Baús (de perto)</label>
           <label><input type="checkbox" data-layer="players" checked> <img src="game/icons/player_32.png" alt=""> Jogadores</label>
+          <div class="trail-row">
+            <label><input type="checkbox" data-layer="trails"> <span class="trail-swatch" aria-hidden="true"></span> Rastros</label>
+            <select id="trail-hours" aria-label="Janela dos rastros">
+              <option value="1">1 h</option>
+              <option value="6" selected>6 h</option>
+              <option value="24">24 h</option>
+            </select>
+          </div>
         </div>
       </section>
     </div>

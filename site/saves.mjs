@@ -21,6 +21,11 @@ export function stableHash(str) {
 const TABLE = stableHash('piece_cartographytable');
 const DATA = stableHash('data');
 const CREATOR = stableHash('creator');
+const OWNER = stableHash('owner');
+const OWNER_NAME = stableHash('ownerName');
+const TEXT = stableHash('text');
+const ITEMS = stableHash('items');
+const CREATOR_INDEX = stableHash('creatorIndex');
 
 // Zip sem dependencia: diretorio central + inflate de cada entrada que o filtro aceita.
 export function unzip(buf, accept = () => true) {
@@ -102,7 +107,12 @@ function readZdo(r) {
     else yaw = (((((a << 16) | r.u16()) >>> 10) & 0x3ff) * 0.5);
   }
   let creator = 0n;
+  let creatorIndex = -1;
+  let owner = 0n;
   let data = null;
+  let items = null;
+  let ownerName = null;
+  let text = null;
   if (flags & 0xff) {
     if (flags & 0x01) r.skip(5);
     const each = (flag, read) => {
@@ -113,18 +123,27 @@ function readZdo(r) {
     each(0x02, () => r.skip(4));
     each(0x04, () => r.skip(12));
     each(0x08, () => r.skip(16));
-    each(0x10, () => r.skip(4));
+    each(0x10, (key) => {
+      const v = r.i32();
+      if (key === CREATOR_INDEX) creatorIndex = v;
+    });
     each(0x20, (key) => {
       const v = r.i64();
       if (key === CREATOR) creator = v;
+      else if (key === OWNER) owner = v;
     });
-    each(0x40, () => r.str());
+    each(0x40, (key) => {
+      const v = r.str();
+      if (key === OWNER_NAME) ownerName = v;
+      else if (key === TEXT) text = v;
+    });
     each(0x80, (key) => {
       const v = r.bytes();
       if (key === DATA && prefab === TABLE) data = v;
+      else if (key === ITEMS) items = v;
     });
   }
-  return { x, y, z, prefab, yaw, creator, data };
+  return { x, y, z, prefab, yaw, creator, creatorIndex, owner, ownerName, text, data, items };
 }
 
 // Chunks atuais pelo indice _main.<n>.chunks do save mais novo: (chunk u16, tamanho u8, versao u32, zdos i32).
@@ -178,13 +197,97 @@ function parseTable(gz) {
   return { explored, pins };
 }
 
-// Tudo o que o mapa precisa de um save: explorado (uniao das mesas), pins sem repetidos e os ZDOs
-// candidatos a construcao (so prefab que o catalogo conhece).
-export function readWorld(files, catalog) {
+// Metadados do mundo (.fwl, World.SaveWorldFWLData): o historico de jogadores, cuja posicao e o
+// `creatorIndex` das pecas. A seed tambem mora aqui e nao sai deste arquivo.
+export function readPlayerHistory(buf) {
+  const r = new Reader(buf);
+  r.i32();
+  if (r.i32() < 35) return [];
+  r.str();
+  r.str();
+  r.skip(4 + 8 + 4 + 1);
+  const keys = r.i32();
+  for (let k = 0; k < keys; k++) r.str();
+  const n = r.i32();
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const id = r.str();
+    const name = r.str();
+    r.str();
+    r.str();
+    out.push({ id, name });
+  }
+  return out;
+}
+
+// Inventory.Save/Load (versao do item 101..109): [hash do prefab, quantidade, qualidade] por item.
+// Da 108 em diante o item e compacto e so traz o hash; antes vinha o nome do prefab.
+export function parseInventory(buf) {
+  const r = new Reader(buf);
+  const version = r.i32();
+  const out = [];
+  if (version >= 108) {
+    const n = r.u16();
+    for (let k = 0; k < n; k++) {
+      r.skip(7);
+      const flags = r.u8();
+      const quality = flags & 4 ? r.u16() : 1;
+      const stack = flags & 8 ? r.u16() : 1;
+      if (flags & 16) r.skip(4);
+      if (flags & 32) {
+        r.skip(8);
+        r.str();
+      }
+      const hash = flags & 64 ? r.i32() : 0;
+      const custom = flags & 128 ? r.numItems() : 0;
+      for (let c = 0; c < custom; c++) {
+        r.str();
+        r.str();
+      }
+      if (version >= 109) r.skip(1);
+      if (hash) out.push([hash, stack, quality]);
+    }
+    return out;
+  }
+  const n = r.i32();
+  for (let k = 0; k < n; k++) {
+    const name = r.str();
+    const stack = r.i32();
+    r.skip(4 + 8 + 1);
+    const quality = version >= 101 ? r.i32() : 1;
+    if (version >= 102) r.skip(4);
+    if (version >= 103) {
+      r.skip(8);
+      r.str();
+    }
+    if (version >= 104) {
+      const custom = r.i32();
+      for (let c = 0; c < custom; c++) {
+        r.str();
+        r.str();
+      }
+    }
+    if (version >= 105) r.skip(4);
+    if (version >= 106) r.skip(1);
+    if (version === 107 || version >= 109) r.skip(1);
+    if (name) out.push([stableHash(name), stack, quality]);
+  }
+  return out;
+}
+
+// Tudo o que o mapa precisa de um save: explorado (uniao das mesas), pins sem repetidos, os ZDOs
+// candidatos a construcao (so prefab que o catalogo conhece) e, para as paginas, baus (qualquer ZDO
+// com inventario), placas e donos (camas e lapides).
+// Com `lean`, so as pecas com criador entram em candidates, e so com posicao e criador: e o que a
+// contagem por construtor precisa, sem segurar 100 mil ZDOs inteiros na memoria.
+export function readWorld(files, catalog, { lean = false } = {}) {
   const explored = new Uint8Array(MAP_SIZE * MAP_SIZE);
   const pins = [];
   const seen = new Set();
   const candidates = [];
+  const containers = [];
+  const signs = [];
+  const owners = [];
   let tables = 0;
   for (const name of currentChunks(files)) {
     const buf = files.get(name);
@@ -206,12 +309,25 @@ export function readWorld(files, catalog) {
             pins.push(pin);
           }
         }
-      } else if (catalog?.has(zdo.prefab)) {
-        candidates.push(zdo);
+        continue;
       }
+      if (zdo.items) {
+        let items = null;
+        try {
+          items = parseInventory(zdo.items);
+        } catch {}
+        if (items) containers.push({ x: zdo.x, y: zdo.y, z: zdo.z, prefab: zdo.prefab, creator: zdo.creator, owner: zdo.owner, ownerName: zdo.ownerName, items });
+      } else if (zdo.text) {
+        signs.push({ x: zdo.x, y: zdo.y, z: zdo.z, text: zdo.text });
+      } else if (zdo.ownerName && zdo.owner) {
+        owners.push({ x: zdo.x, y: zdo.y, z: zdo.z, prefab: zdo.prefab, owner: zdo.owner, name: zdo.ownerName });
+      }
+      if (!catalog?.has(zdo.prefab)) continue;
+      if (!lean) candidates.push(zdo);
+      else if (zdo.creator) candidates.push({ x: zdo.x, z: zdo.z, creator: zdo.creator, creatorIndex: zdo.creatorIndex });
     }
   }
-  return { explored, pins, candidates, tables };
+  return { explored, pins, candidates, tables, containers, signs, owners };
 }
 
 // Catalogo do plugin (pieces-catalog.bin): hash -> forma.

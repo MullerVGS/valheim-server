@@ -8,6 +8,16 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   do mapa pinta com a mesma luz, o pergaminho, as nuvens e a névoa do terreno: contorno de tinta, sombra do
   sol, chão pisado sem árvores em volta e nuvens ralas sobre as bases. Precisa de `EXT_color_buffer_float`;
   sem ele o mapa abre sem construções.
+- `mapview.js`: o mapa num canvas (renderer, camada 2D, arrastar/zoom/pinça/clique), usado pelo mapa principal e
+  pelas páginas. `common.js`: nomes do jogo, itens, e as regras de base (agrupamento de peças que contém um ponto).
+- Páginas: `/jogador/<nome>` (`player.html`/`player.js`: rastro com volta no tempo, horas por dia e por hora,
+  bases que ergueu, lápides, camas, marcações) e `/base/<x>,<z>` (`base.html`/`base.js`: construtores, materiais,
+  crescimento dia a dia, estoque somado e cada baú). No mapa, clicar num jogador, base ou baú abre um cartão com
+  o básico e o link da página; o painel tem busca de item nos baús, rastros e a linha do tempo com play.
+- `world.mjs`: lê o save ao vivo (`SAVE_DIR`) quando o autosave termina (`_main.<n>.ok` novo): baús com o que tem
+  dentro (qualquer ZDO com inventário e criador, e lápides), placas a até 2,5 m como nome do baú, camas e quem
+  construiu cada peça (id do personagem pelas camas/lápides; sem eles, `creatorIndex` → histórico de jogadores do
+  `.fwl2` → `players.tsv`). Só o que está no explorado das mesas.
 - `server.mjs`: Node sem dependências. Estáticos, terreno com ETag (sempre revalida) e
   `/api/state` / `/api/history` com consultas fixas ao Victoria (`VM_URL`, cache de 5 s / 60 s).
 - `terrain.mjs`: dados do mapa, recortados pelo que as mesas de cartografia mostram (+2 px para a borda da
@@ -25,6 +35,12 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   0 madeira, 1 madeira nobre, 2 madeira de Yggdrasil, 3 pedra, 4 mármore, 5 grausten, 6 ferro,
   7 antigo, 8 gelo, 9 móvel/estação, 10 plantação, 11 barco. 404 enquanto o plugin não gravou.
 - `GET /api/state`, `GET /api/history`: jogadores, marcações, portais, camas, mesas e métricas.
+- `GET /api/world`: baús (`items` = `[hash do prefab, quantidade, qualidade]`), camas e a contagem de peças por
+  construtor numa grade de `cell` m (`[cx, cz, construtor, peças]`), do save ao vivo.
+- `GET /api/players`: todo jogador que o Victoria viu em 180 dias (primeira/última vez, minutos em 7 dias).
+  `GET /api/player?name=`: minutos online por hora (30 dias) e total. `GET /api/trails?hours=1|6|24|72|168[&name=]`:
+  posição no tempo (`[t, x, z]`), passo de 10 s a 5 min conforme a janela. Nome só se o Victoria já conhece.
+- `GET /api/days/area?x0=&z0=&x1=&z1=`: peças dentro da caixa em cada dia guardado.
 - `GET /api/days`: dias guardados (data, hora do save, km² explorados, construções, marcações);
   `GET /data/days/<AAAA-MM-DD>/terrain.bin`, `.../pieces.bin` e `GET /api/days/<AAAA-MM-DD>/pins`: o mapa daquele dia.
 
@@ -43,6 +59,8 @@ A arte é da Iron Gate e o terreno é spoiler: os dois ficam fora do git.
 ```sh
 # arte do mapa, da instalação do jogo (UnityPy + Pillow >= 10)
 python3 tools/extract_game_art.py --game "/caminho/para/Valheim" --out public/game
+# nomes e ícones dos itens (busca e baús): public/game/items.json + items.webp
+python3 tools/extract_items.py --game "/caminho/para/Valheim" --out public/game
 # só sem o plugin: terreno do mundo inteiro a partir de uma grade do gerador de mundo
 # (12 m, centro de pixel: -12282..12282) com bioma, altura e fator de floresta
 python3 tools/build_terrain.py world.bin data/terrain-full.bin

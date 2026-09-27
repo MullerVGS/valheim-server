@@ -1,319 +1,344 @@
-import { MapRenderer, parseTerrain, sunDirection, WORLD_SIZE } from './mapgl.js';
-import { groupSettlements, KINDS, parsePieces, pieceAt } from './pieces.js';
+import { KINDS, pieceAt } from './pieces.js';
+import { MapView } from './mapview.js';
+import {
+  $, ago, BASE_MARGIN, BASE_MIN_PIECES, baseAt, baseHref, baseName, BIOME_NAMES, buildersIn, columnChart,
+  containerTitle, dayMonth, duration, el, fmt, getJSON, inBox, itemGrid, itemIcon, itemName, loadItems,
+  materials, normalize, PIN_ICONS, playerHref,
+} from './common.js';
 
-const GAME = 'game';
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
-const MIN_MPP = 0.25; // zoom maximo do jogo: 0,015 do mapa na tela
-const MAX_MPP = 40;
+const WORLD_EVERY_MS = 120000;
+const TRAILS_EVERY_MS = 60000;
 const LABELS_UNTIL_MPP = 9;
+// Baus aparecem so de perto; os achados da busca aparecem sempre.
+const CHESTS_UNTIL_MPP = 2.5;
+const PLAY_STEP_MS = 1400;
 
-// Luz de um dia limpo no prado, em valores de inspetor (sRGB); o renderer lineariza.
-const DAY = {
-  sunDir: sunDirection(0.42),
-  sunColor: [0.72, 0.74, 0.78, 1],
-  ambientColor: [0.52, 0.57, 0.7, 1],
-  sunFogColor: [0.7, 0.7, 0.72, 1],
-};
-
-// Indice do terrain.bin -> cor do Minimap. O prefab sobrescreve as do codigo; terras nebulosas
-// e oceano nao sao serializados.
-function biomeColors(art) {
-  const b = art.biomes;
-  const list = [[1, 1, 1], b.meadows, b.swamp, b.mountain, b.blackforest, b.heath, b.ashlands, b.deepnorth, [0.2, 0.2, 0.2]];
-  return list.map((c) => c.map((v) => Math.round(v * 255)));
-}
-
-const BIOME_NAMES = {
-  1: 'Prado', 2: 'Pântano', 4: 'Montanha', 8: 'Floresta Negra', 16: 'Planície', 32: 'Terras das Cinzas',
-  64: 'Extremo Norte', 256: 'Oceano', 512: 'Terras Nebulosas',
-};
-
-// Minimap.PinType -> icone
-const PIN_ICONS = { Icon0: 'fire', Icon1: 'house', Icon2: 'hammer', Icon3: 'pin', Icon4: 'portal', Boss: 'boss' };
-
-const $ = (id) => document.getElementById(id);
-const mapCanvas = $('map');
-const overlay = $('overlay');
-const ctx = overlay.getContext('2d');
-
-const view = { x: -44, z: -68, metersPerPixel: 3.2, pixelRatio: 1 };
-const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true };
+const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false };
 let state = null;
-let renderer = null;
+let world = null; // /api/world: baus, camas, construtores
+let items = null;
+let knownPlayers = [];
+let trailHours = 6;
+let trailData = null;
 // Dia do historico em exibicao (null = agora, ao vivo) e os pins daquele dia.
 let day = null;
 let dayPins = [];
-let biomeTable = null;
-let icons = {};
-let pieces = null;
-let settlements = null;
 let hits = [];
-let dirty = true;
+// Cartao aberto: { anchor: [x, z], render: () => Node }.
+let card = null;
+// Busca nos baus: hash do item escolhido.
+let found = null;
+
+const hudCoords = $('coords');
+const mapView = new MapView({
+  map: $('map'),
+  overlay: $('overlay'),
+  view: { x: -44, z: -68, metersPerPixel: 3.2 },
+  icons: ['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss', 'death'],
+  onDraw: drawOverlay,
+  onHover: hover,
+  onClick: click,
+  onChange: writeHash,
+});
 
 function readHash() {
   const m = location.hash.match(/^#(-?[\d.]+),(-?[\d.]+),([\d.]+)$/);
-  if (!m) return;
-  view.x = Number(m[1]);
-  view.z = Number(m[2]);
-  view.metersPerPixel = clampMpp(Number(m[3]));
+  if (m) mapView.goTo(Number(m[1]), Number(m[2]), Number(m[3]));
 }
 
 let hashTimer = 0;
-function writeHash() {
+function writeHash(view) {
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => {
     history.replaceState(null, '', `#${view.x.toFixed(0)},${view.z.toFixed(0)},${view.metersPerPixel.toFixed(2)}`);
   }, 250);
 }
 
-const clampMpp = (v) => Math.min(MAX_MPP, Math.max(MIN_MPP, v));
+// ---------- o que esta sob o ponteiro ----------
 
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  view.pixelRatio = dpr;
-  for (const c of [mapCanvas, overlay]) {
-    c.width = Math.round(c.clientWidth * dpr);
-    c.height = Math.round(c.clientHeight * dpr);
-  }
-  dirty = true;
+function hitAt(sx, sy) {
+  const icon = [...hits].reverse().find((h) => Math.abs(h.sx - sx) <= Math.max(h.r, 14) && Math.abs(h.sy - sy) <= Math.max(h.r, 14));
+  if (icon) return icon;
+  const [wx, wz] = mapView.toWorld(sx, sy);
+  return pieceHit(wx, wz);
 }
 
-function toScreen(x, z) {
-  return [
-    mapCanvas.clientWidth / 2 + (x - view.x) / view.metersPerPixel,
-    mapCanvas.clientHeight / 2 - (z - view.z) / view.metersPerPixel,
-  ];
+// Construcao sob o ponteiro: a base a que ela pertence.
+function pieceHit(wx, wz) {
+  const { pieces, settlements } = mapView;
+  if (!pieces || !layers.pieces) return null;
+  const i = pieceAt(pieces, settlements, wx, wz, mapView.view.metersPerPixel * 0.75);
+  if (i < 0) return null;
+  const g = settlements.groups[settlements.pieceGroup[i]];
+  return baseHit(g, KINDS[pieces.kind[i]].name);
 }
 
-function toWorld(sx, sy) {
-  return [
-    view.x + (sx - mapCanvas.clientWidth / 2) * view.metersPerPixel,
-    view.z - (sy - mapCanvas.clientHeight / 2) * view.metersPerPixel,
-  ];
-}
-
-function zoomAt(sx, sy, factor) {
-  const [wx, wz] = toWorld(sx, sy);
-  view.metersPerPixel = clampMpp(view.metersPerPixel * factor);
-  const [nx, nz] = toWorld(sx, sy);
-  view.x += wx - nx;
-  view.z += wz - nz;
-  changed();
-}
-
-function changed() {
-  const half = WORLD_SIZE / 2;
-  view.x = Math.max(-half, Math.min(half, view.x));
-  view.z = Math.max(-half, Math.min(half, view.z));
-  dirty = true;
-  writeHash();
-}
-
-// Arrastar, roda do mouse, pinca.
-function bindInput() {
-  const pointers = new Map();
-  let pinch = null;
-  mapCanvas.addEventListener('pointerdown', (e) => {
-    mapCanvas.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    mapCanvas.classList.add('dragging');
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) };
-    }
-  });
-  mapCanvas.addEventListener('pointermove', (e) => {
-    const prev = pointers.get(e.pointerId);
-    if (!prev) {
-      hover(e.clientX, e.clientY);
-      return;
-    }
-    const cur = { x: e.clientX, y: e.clientY };
-    pointers.set(e.pointerId, cur);
-    if (pointers.size === 2 && pinch) {
-      const [a, b] = [...pointers.values()];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      if (dist > 0) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, pinch.dist / dist);
-      pinch.dist = dist;
-      return;
-    }
-    if (pointers.size === 1) {
-      view.x -= (cur.x - prev.x) * view.metersPerPixel;
-      view.z += (cur.y - prev.y) * view.metersPerPixel;
-      changed();
-    }
-  });
-  const up = (e) => {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinch = null;
-    if (!pointers.size) mapCanvas.classList.remove('dragging');
+function baseHit(g, here) {
+  const pins = day ? dayPins : state?.pins;
+  const mix = materials(g)
+    .filter((m) => m.count / g.count >= 0.08)
+    .map((m) => `${m.name} ${Math.round((m.count / g.count) * 100)}%`);
+  return {
+    title: baseName(g, pins, world),
+    lines: [g.count === 1 ? 'peça solta' : `${fmt.format(g.count)} peças`, mix.join(' · '), here ? `aqui: ${here}` : ''].filter(Boolean),
+    anchor: [(g.minX + g.maxX) / 2, g.maxZ],
+    card: () => baseCard(g),
   };
-  mapCanvas.addEventListener('pointerup', up);
-  mapCanvas.addEventListener('pointercancel', up);
-  mapCanvas.addEventListener('pointerleave', () => hideTooltip());
-  mapCanvas.addEventListener(
-    'wheel',
-    (e) => {
-      e.preventDefault();
-      const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-      zoomAt(e.clientX, e.clientY, Math.exp(delta * 0.0015));
-    },
-    { passive: false },
-  );
-  mapCanvas.addEventListener('dblclick', (e) => zoomAt(e.clientX, e.clientY, 0.5));
-  window.addEventListener('resize', resize);
-
-  for (const input of document.querySelectorAll('#layers input')) {
-    layers[input.dataset.layer] = input.checked;
-    input.addEventListener('change', () => {
-      layers[input.dataset.layer] = input.checked;
-      if (renderer) renderer.showPieces = layers.pieces;
-      dirty = true;
-    });
-  }
-  const panel = $('panel');
-  $('panel-toggle').addEventListener('click', () => {
-    const collapsed = panel.classList.toggle('collapsed');
-    $('panel-toggle').setAttribute('aria-expanded', String(!collapsed));
-  });
-  if (window.matchMedia('(max-width: 720px)').matches) {
-    panel.classList.add('collapsed');
-    $('panel-toggle').setAttribute('aria-expanded', 'false');
-  }
 }
 
 function hover(sx, sy) {
-  const [wx, wz] = toWorld(sx, sy);
-  $('coords').textContent = `x ${wx.toFixed(0)}, z ${wz.toFixed(0)}`;
-  const hit = hits.find((h) => Math.abs(h.sx - sx) <= h.r && Math.abs(h.sy - sy) <= h.r) ?? pieceHit(wx, wz);
+  if (sx == null) return hideTooltip();
+  const [wx, wz] = mapView.toWorld(sx, sy);
+  hudCoords.textContent = `x ${wx.toFixed(0)}, z ${wz.toFixed(0)}`;
+  const hit = hitAt(sx, sy);
+  mapView.map.classList.toggle('pointing', !!hit?.card);
   if (!hit) return hideTooltip();
   const tip = $('tooltip');
-  tip.innerHTML = '';
-  const title = document.createElement('strong');
-  title.textContent = hit.title;
-  tip.append(title);
-  for (const line of hit.lines) {
-    const s = document.createElement('span');
-    s.textContent = line;
-    tip.append(s, document.createElement('br'));
-  }
+  tip.replaceChildren(el('strong', { text: hit.title }), ...hit.lines.flatMap((l) => [el('span', { text: l }), el('br')]));
   tip.hidden = false;
-  const x = Math.min(sx + 14, window.innerWidth - tip.offsetWidth - 8);
-  const y = Math.min(sy + 14, window.innerHeight - tip.offsetHeight - 8);
+  const r = mapView.map.getBoundingClientRect();
+  const x = Math.min(r.left + sx + 14, window.innerWidth - tip.offsetWidth - 8);
+  const y = Math.min(r.top + sy + 14, window.innerHeight - tip.offsetHeight - 8);
   tip.style.left = `${x}px`;
   tip.style.top = `${y}px`;
-}
-
-const PLACE_PINS = new Set(['Icon0', 'Icon1', 'Icon2', 'Icon3']);
-
-// Construcao sob o mouse: material da peca e a base a que ela pertence.
-function pieceHit(wx, wz) {
-  if (!pieces || !layers.pieces) return null;
-  const i = pieceAt(pieces, settlements, wx, wz, view.metersPerPixel * 0.75);
-  if (i < 0) return null;
-  const g = settlements.groups[settlements.pieceGroup[i]];
-  const kind = KINDS[pieces.kind[i]];
-  const pin = state?.pins.find(
-    (p) => PLACE_PINS.has(p.type) && p.name && p.x >= g.minX - 15 && p.x <= g.maxX + 15 && p.z >= g.minZ - 15 && p.z <= g.maxZ + 15,
-  );
-  const mix = g.kinds
-    .map((c, k) => [c, k])
-    .filter(([c]) => c / g.count >= 0.08)
-    .sort((a, b) => b[0] - a[0])
-    .map(([c, k]) => `${KINDS[k].name} ${Math.round((c / g.count) * 100)}%`);
-  const lines = [
-    g.count === 1 ? 'peça solta' : `${fmt.format(g.count)} peças`,
-    mix.join(' · '),
-    `aqui: ${kind.name}`,
-  ];
-  return { title: pin ? pin.name : g.count >= 40 ? 'Base' : 'Construção', lines };
 }
 
 function hideTooltip() {
   $('tooltip').hidden = true;
 }
 
-function loadIcon(name) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve([name, img]);
-    img.onerror = () => resolve([name, null]);
-    img.src = `${GAME}/icons/${name}.png`;
-  });
+function click(sx, sy) {
+  hideTooltip();
+  const hit = hitAt(sx, sy);
+  if (!hit) return closeCard();
+  openCard(hit.anchor ?? mapView.toWorld(sx, sy), hit.card ?? (() => simpleCard(hit)));
 }
 
-// Camada de cima: marcacoes, portais, camas e jogadores, com a fonte e os icones do jogo.
-function drawOverlay() {
-  const dpr = view.pixelRatio;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight);
-  hits = [];
-  if (!state) return;
-  const w = overlay.clientWidth;
-  const h = overlay.clientHeight;
-  const showLabels = layers.labels && view.metersPerPixel <= LABELS_UNTIL_MPP;
-  const boxes = [];
-  const iconSize = view.metersPerPixel > 12 ? 16 : view.metersPerPixel > 5 ? 20 : 26;
+// ---------- cartao ----------
 
-  const visible = (sx, sy) => sx > -40 && sy > -40 && sx < w + 40 && sy < h + 40;
-  const icon = (name, sx, sy, size, alpha = 1) => {
-    const img = icons[name];
-    if (!img) return;
-    const k = size / Math.max(img.width, img.height);
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(img, sx - (img.width * k) / 2, sy - (img.height * k) / 2, img.width * k, img.height * k);
-    ctx.globalAlpha = 1;
-  };
-  const label = (text, sx, sy, size, force = false) => {
-    if (!text) return;
-    ctx.font = `700 ${size}px Norse, "Averia Serif Libre", serif`;
-    const tw = ctx.measureText(text).width;
-    const box = [sx - tw / 2 - 2, sy - 2, sx + tw / 2 + 2, sy + size + 2];
-    if (!force && boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) return;
-    boxes.push(box);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-    ctx.strokeText(text, sx, sy);
-    ctx.fillStyle = '#f4efe6';
-    ctx.fillText(text, sx, sy);
-  };
+function openCard(anchor, render) {
+  card = { anchor, render };
+  const box = $('card');
+  box.replaceChildren(
+    el('button', { class: 'card-close', type: 'button', 'aria-label': 'Fechar', onclick: closeCard, text: '×' }),
+    render(),
+  );
+  box.hidden = false;
+  placeCard();
+}
+
+function closeCard() {
+  card = null;
+  $('card').hidden = true;
+}
+
+function refreshCard() {
+  if (card) openCard(card.anchor, card.render);
+}
+
+// Acima da coisa clicada, sem sair da tela. No celular o CSS prende o cartao embaixo.
+function placeCard() {
+  if (!card) return;
+  const box = $('card');
+  const [sx, sy] = mapView.toScreen(...card.anchor);
+  const r = mapView.map.getBoundingClientRect();
+  const w = box.offsetWidth;
+  const h = box.offsetHeight;
+  let x = r.left + sx - w / 2;
+  let y = r.top + sy - h - 18;
+  if (y < 8) y = r.top + sy + 22;
+  x = Math.max(8, Math.min(window.innerWidth - w - 8, x));
+  y = Math.max(8, Math.min(window.innerHeight - h - 8, y));
+  box.style.left = `${x}px`;
+  box.style.top = `${y}px`;
+}
+
+const cardHead = (title, sub) => el('header', {}, el('h3', { text: title }), sub ? el('p', { class: 'sub', text: sub }) : null);
+const cardLink = (href, text) => el('a', { class: 'card-link', href }, text, ' →');
+
+function simpleCard(hit) {
+  return el('div', {}, cardHead(hit.title), ...hit.lines.map((l) => el('p', { text: l })));
+}
+
+function playerCard(p) {
+  const known = knownPlayers.find((k) => k.name === p.name);
+  const rows = [
+    ['Onde', `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}`],
+    ['Ping', p.ping != null ? `${(p.ping * 1000).toFixed(0)} ms` : '—'],
+    ['Jogou em 7 dias', known ? duration(known.minutes7d) : '—'],
+  ];
+  const g = mapView.settlements && baseAt(mapView.settlements, p.x, p.z, BASE_MARGIN);
+  if (g && g.count >= BASE_MIN_PIECES) rows.push(['Está em', baseName(g, state?.pins, world)]);
+  return el('div', {},
+    cardHead(p.name, 'online agora'),
+    el('dl', { class: 'card-stats' }, rows.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: v })))),
+    cardLink(playerHref(p.name), 'Página do jogador'));
+}
+
+function baseCard(g) {
+  const pins = day ? dayPins : state?.pins;
+  const builders = buildersIn(world, g);
+  const chests = chestsIn(g);
+  const stored = chests.flatMap((c) => c.items);
+  const rows = [
+    ['Peças', fmt.format(g.count)],
+    ['Materiais', materials(g).slice(0, 2).map((m) => m.name).join(', ')],
+  ];
+  if (builders.length) rows.push(['Construída por', builders.slice(0, 3).map((b) => b.name).join(', ')]);
+  if (chests.length) rows.push(['Baús', `${chests.length} · ${fmt.format(stored.reduce((a, i) => a + i[1], 0))} itens`]);
+  return el('div', {},
+    cardHead(baseName(g, pins, world), `${Math.round(g.maxX - g.minX)} × ${Math.round(g.maxZ - g.minZ)} m`),
+    el('dl', { class: 'card-stats' }, rows.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: v })))),
+    day ? el('p', { class: 'sub', text: `Como estava em ${day.slice(8, 10)}/${day.slice(5, 7)}.` }) : null,
+    cardLink(baseHref(g), 'Página da base'));
+}
+
+function chestCard(c) {
+  const g = mapView.settlements && baseAt(mapView.settlements, c.x, c.z, BASE_MARGIN);
+  const count = c.items.reduce((a, i) => a + i[1], 0);
+  return el('div', {},
+    cardHead(containerTitle(c), c.tomb ? 'lápide' : `${c.kind}${c.owner ? ` · de ${c.owner}` : ''}`),
+    c.items.length ? itemGrid(items, c.items, { limit: 24, px: 30 }) : el('p', { class: 'sub', text: 'Vazio.' }),
+    c.items.length ? el('p', { class: 'sub', text: `${fmt.format(count)} itens` }) : null,
+    g && g.count >= BASE_MIN_PIECES ? cardLink(baseHref(g), baseName(g, state?.pins, world)) : null);
+}
+
+// ---------- camada de cima ----------
+
+const visibleOn = (sx, sy, w, h) => sx > -40 && sy > -40 && sx < w + 40 && sy < h + 40;
+
+function chestsIn(g) {
+  return world ? world.containers.filter((c) => !c.tomb && inBox(c.x, c.z, g, BASE_MARGIN)) : [];
+}
+
+// Rastro com tinta de mapa: mais velho mais apagado, fio claro por baixo para ler sobre qualquer bioma.
+function drawTrail(ctx, points, step, now) {
+  const span = trailHours * 3600;
+  let prev = null;
+  for (const [t, x, z] of points) {
+    const [sx, sy] = mapView.toScreen(x, z);
+    if (prev && t - prev.t <= step * 3 && Math.hypot(sx - prev.sx, sy - prev.sy) < 400) {
+      const age = Math.min(1, (now - t) / span);
+      ctx.globalAlpha = 0.95 - age * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(prev.sx, prev.sy);
+      ctx.lineTo(sx, sy);
+      ctx.strokeStyle = 'rgba(255,245,225,0.55)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.strokeStyle = '#5b1f10';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    prev = { t, sx, sy };
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawChest(ctx, sx, sy, size, highlight) {
+  const w = size;
+  const h = size * 0.72;
+  if (highlight) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 0.95, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(242,163,58,0.35)';
+    ctx.fill();
+    ctx.strokeStyle = '#f2a33a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#7a4a22';
+  ctx.strokeStyle = '#1b0f06';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(sx - w / 2, sy - h / 2, w, h, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx - w / 2, sy - h / 8);
+  ctx.lineTo(sx + w / 2, sy - h / 8);
+  ctx.stroke();
+  ctx.fillStyle = '#d9b35b';
+  ctx.fillRect(sx - 1.5, sy - h / 8 - 1, 3, 4);
+}
+
+function drawOverlay(ctx, mv) {
+  hits = [];
+  drawHud();
+  placeCard();
+  if (!state) return;
+  const mpp = mv.view.metersPerPixel;
+  const w = mv.width;
+  const h = mv.height;
+  const visible = (sx, sy) => visibleOn(sx, sy, w, h);
+  const showLabels = layers.labels && mpp <= LABELS_UNTIL_MPP;
+  const boxes = [];
+  const iconSize = mpp > 12 ? 16 : mpp > 5 ? 20 : 26;
+
+  if (layers.trails && trailData && !day) {
+    const now = Date.now() / 1000;
+    for (const p of trailData.players) drawTrail(ctx, p.points, trailData.step, now);
+  }
 
   ctx.shadowColor = 'rgba(0,0,0,0.8)';
   ctx.shadowBlur = 3;
 
   if (layers.beds) {
     for (const b of day ? [] : state.beds) {
-      const [sx, sy] = toScreen(b.x, b.z);
+      const [sx, sy] = mv.toScreen(b.x, b.z);
       if (!visible(sx, sy)) continue;
-      icon('bed', sx, sy, iconSize * 0.75, 0.9);
-      hits.push({ sx, sy, r: iconSize * 0.4, title: 'Cama', lines: [b.owner ? `de ${b.owner}` : ''] });
+      mv.icon('bed', sx, sy, iconSize * 0.75, 0.9);
+      hits.push({ sx, sy, r: iconSize * 0.4, title: 'Cama', lines: [b.owner ? `de ${b.owner}` : ''].filter(Boolean), anchor: [b.x, b.z] });
     }
   }
   if (layers.portals) {
     for (const p of day ? [] : state.portals) {
-      const [sx, sy] = toScreen(p.x, p.z);
+      const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
-      icon('portal', sx, sy, iconSize * 0.8, p.connected ? 1 : 0.55);
-      hits.push({
-        sx, sy, r: iconSize * 0.4, title: p.tag || 'Portal',
-        lines: [p.connected ? 'conectado' : 'sem par'],
-      });
+      mv.icon('portal', sx, sy, iconSize * 0.8, p.connected ? 1 : 0.55);
+      hits.push({ sx, sy, r: iconSize * 0.4, title: p.tag || 'Portal', lines: [p.connected ? 'conectado' : 'sem par'], anchor: [p.x, p.z] });
+    }
+  }
+
+  // Baus: de perto todos; a busca destaca os que tem o item em qualquer zoom.
+  if (world && !day) {
+    ctx.shadowBlur = 2;
+    for (const c of world.containers) {
+      const match = found != null && c.items.some((i) => i[0] === found);
+      const show = match || (c.tomb ? layers.pins : layers.chests && mpp <= CHESTS_UNTIL_MPP);
+      if (!show) continue;
+      const [sx, sy] = mv.toScreen(c.x, c.z);
+      if (!visible(sx, sy)) continue;
+      if (c.tomb) mv.icon('death', sx, sy, iconSize * 0.85);
+      else drawChest(ctx, sx, sy, mpp > 2.5 ? 12 : 15, match);
+      const lines = c.tomb ? [`${c.items.length} itens esperando`] : [c.kind, c.owner ? `de ${c.owner}` : ''].filter(Boolean);
+      if (match) {
+        const n = c.items.filter((i) => i[0] === found).reduce((a, i) => a + i[1], 0);
+        lines.unshift(`${fmt.format(n)} × ${itemName(items, found)}`);
+      }
+      hits.push({ sx, sy, r: 10, title: containerTitle(c), lines, anchor: [c.x, c.z], card: () => chestCard(c) });
     }
   }
 
   const labelQueue = [];
   if (layers.pins) {
     for (const p of day ? dayPins : state.pins) {
-      const [sx, sy] = toScreen(p.x, p.z);
+      const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       const name = PIN_ICONS[p.type] ?? 'pin';
-      icon(name, sx, sy, iconSize, p.checked ? 0.6 : 1);
-      if (p.checked) icon('checked', sx, sy, iconSize * 0.9);
-      hits.push({ sx, sy, r: iconSize * 0.45, title: p.name || 'Marcação', lines: [p.author ? `por ${p.author}` : '', p.checked ? 'riscada' : ''].filter(Boolean) });
+      mv.icon(name, sx, sy, iconSize, p.checked ? 0.6 : 1);
+      if (p.checked) mv.icon('checked', sx, sy, iconSize * 0.9);
+      const g = mv.settlements && baseAt(mv.settlements, p.x, p.z, 15);
+      const base = g && g.count >= BASE_MIN_PIECES ? baseHit(g) : null;
+      hits.push({
+        sx, sy, r: iconSize * 0.45, title: p.name || 'Marcação',
+        lines: [p.author ? `por ${p.author}` : '', p.checked ? 'riscada' : ''].filter(Boolean),
+        anchor: [p.x, p.z],
+        // Marcacao de uma base abre o cartao da base.
+        card: base?.card,
+      });
       if (showLabels) labelQueue.push([p.name, sx, sy + iconSize * 0.45, 15]);
     }
   }
@@ -324,42 +349,34 @@ function drawOverlay() {
   if (layers.players) {
     ctx.shadowBlur = 4;
     for (const p of day ? [] : state.players) {
-      const [sx, sy] = toScreen(p.x, p.z);
+      const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
-      icon('player_32', sx, sy, iconSize + 4);
-      hits.push({ sx, sy, r: iconSize * 0.5, title: p.name, lines: [BIOME_NAMES[p.biome] ?? '', p.ping != null ? `ping ${(p.ping * 1000).toFixed(0)} ms` : ''].filter(Boolean) });
+      mv.icon('player_32', sx, sy, iconSize + 4);
+      hits.push({
+        sx, sy, r: iconSize * 0.5, title: p.name,
+        lines: [BIOME_NAMES[p.biome] ?? '', p.ping != null ? `ping ${(p.ping * 1000).toFixed(0)} ms` : ''].filter(Boolean),
+        anchor: [p.x, p.z],
+        card: () => playerCard(p),
+      });
       playerLabels.push([p.name, sx, sy + iconSize * 0.55 + 2, 17]);
     }
     ctx.shadowBlur = 0;
   }
-  for (const l of playerLabels) label(...l, true);
-  for (const l of labelQueue) label(...l);
+  for (const l of playerLabels) mv.label(...l);
+  for (const l of labelQueue) mv.label(...l, boxes);
 }
 
 function drawHud() {
   const target = 120;
-  const meters = target * view.metersPerPixel;
+  const mpp = mapView.view.metersPerPixel;
+  const meters = target * mpp;
   const pow = Math.pow(10, Math.floor(Math.log10(meters)));
   const nice = [1, 2, 5, 10].map((k) => k * pow).filter((v) => v <= meters).pop();
-  $('scale-bar').style.width = `${nice / view.metersPerPixel}px`;
+  $('scale-bar').style.width = `${nice / mpp}px`;
   $('scale-text').textContent = nice >= 1000 ? `${nice / 1000} km` : `${nice} m`;
 }
 
-function frame(now) {
-  if (renderer) {
-    const t = now / 1000;
-    const env = { ...DAY, cloudOffset: [t * 0.0012, 0, t * 0.0007] };
-    renderer.draw(view, env, t);
-  }
-  if (dirty) {
-    drawOverlay();
-    drawHud();
-    dirty = false;
-  }
-  requestAnimationFrame(frame);
-}
-
-const fmt = new Intl.NumberFormat('pt-BR');
+// ---------- painel ----------
 
 function renderPanel() {
   const s = state.server;
@@ -374,35 +391,32 @@ function renderPanel() {
   $('s-version').textContent = s.version ?? '–';
   saveAt = s.autosaveIn != null ? Date.now() + s.autosaveIn * 1000 : null;
   tickSave();
+  renderPlayers();
+}
 
+function renderPlayers() {
   const list = $('players');
-  list.innerHTML = '';
-  if (!state.players.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'Ninguém no mundo agora.';
-    list.append(li);
-  }
-  for (const p of [...state.players].sort((a, b) => a.name.localeCompare(b.name))) {
-    const li = document.createElement('li');
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = p.name;
-    const ping = document.createElement('span');
-    ping.className = 'ping';
-    ping.textContent = p.ping != null ? `${(p.ping * 1000).toFixed(0)} ms` : '';
-    const where = document.createElement('span');
-    where.className = 'where';
-    where.textContent = `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}`;
-    li.append(name, ping, where);
+  list.replaceChildren();
+  const online = state ? [...state.players].sort((a, b) => a.name.localeCompare(b.name)) : [];
+  if (!online.length) list.append(el('li', { class: 'empty', text: 'Ninguém no mundo agora.' }));
+  for (const p of online) {
+    const li = el('li', {},
+      el('span', { class: 'name', text: p.name }),
+      el('span', { class: 'ping', text: p.ping != null ? `${(p.ping * 1000).toFixed(0)} ms` : '' }),
+      el('span', { class: 'where', text: `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}` }));
     li.addEventListener('click', () => {
-      view.x = p.x;
-      view.z = p.z;
-      view.metersPerPixel = Math.min(view.metersPerPixel, 1.5);
-      changed();
+      mapView.goTo(p.x, p.z, Math.min(mapView.view.metersPerPixel, 1.5));
+      openCard([p.x, p.z], () => playerCard(p));
     });
     list.append(li);
   }
+  const offline = knownPlayers.filter((k) => !online.some((p) => p.name === k.name));
+  const others = $('others');
+  others.replaceChildren(
+    ...offline.map((k) =>
+      el('li', {}, el('a', { href: playerHref(k.name) }, el('span', { class: 'name', text: k.name }), el('span', { class: 'seen', text: ago(k.lastSeen) })))),
+  );
+  $('others-wrap').hidden = !offline.length;
 }
 
 let saveAt = null;
@@ -428,11 +442,9 @@ function renderSpark(series) {
 
 async function pollState() {
   try {
-    const res = await fetch('api/state', { cache: 'no-store' });
-    if (!res.ok) throw new Error(res.status);
-    state = await res.json();
+    state = await getJSON('api/state');
     renderPanel();
-    dirty = true;
+    mapView.invalidate();
   } catch {
     $('status').className = 'status offline';
     $('status-text').textContent = 'sem notícias do servidor';
@@ -442,111 +454,265 @@ async function pollState() {
 
 async function pollHistory() {
   try {
-    const res = await fetch('api/history', { cache: 'no-store' });
-    if (res.ok) renderSpark((await res.json()).online);
+    renderSpark((await getJSON('api/history')).online);
+    knownPlayers = await getJSON('api/players');
+    if (state) renderPlayers();
   } catch {}
   setTimeout(pollHistory, HISTORY_EVERY_MS);
 }
 
-// Terreno e construcoes de agora ou de um dia do historico, trocados no renderer ja montado.
-async function loadWorld(r, date) {
-  const base = date ? `data/days/${date}/` : 'data/';
-  const [terrainBuf, piecesBuf] = await Promise.all([
-    // Sempre revalida: a Cloudflare manda o navegador guardar .bin por 4 h.
-    fetch(base + 'terrain.bin', { cache: 'no-cache' }).then((res) => {
-      if (!res.ok) throw new Error(`terreno ${res.status}`);
-      return res.arrayBuffer();
-    }),
-    // Sem construcoes o mapa abre do mesmo jeito.
-    fetch(base + 'pieces.bin', { cache: 'no-cache' })
-      .then((res) => (res.ok ? res.arrayBuffer() : null))
-      .catch(() => null),
-  ]);
-  pieces = piecesBuf && r.pieces ? parsePieces(piecesBuf) : null;
-  settlements = pieces ? groupSettlements(pieces) : [];
-  if (r.pieces) r.setPieces(pieces ?? parsePieces(emptyPieces()));
-  r.setTerrain(parseTerrain(terrainBuf), biomeTable);
+async function pollWorld() {
+  try {
+    world = await getJSON('api/world');
+    items ??= await loadItems();
+    renderSearchResults();
+    mapView.invalidate();
+  } catch {}
+  setTimeout(pollWorld, WORLD_EVERY_MS);
 }
 
-function emptyPieces() {
-  const b = new ArrayBuffer(8);
-  new Uint8Array(b).set([86, 80, 67, 49]);
-  return b;
+async function loadTrails() {
+  if (!layers.trails) return;
+  try {
+    trailData = await getJSON(`api/trails?hours=${trailHours}`);
+    mapView.invalidate();
+  } catch {}
 }
 
-const fmtDay = (d) => `${d.date.slice(8, 10)}/${d.date.slice(5, 7)}`;
+// ---------- busca nos baus ----------
+
+function itemTotals() {
+  const totals = new Map();
+  for (const c of world?.containers ?? []) {
+    if (c.tomb) continue;
+    for (const [hash, stack] of c.items) {
+      const t = totals.get(hash) ?? { hash, total: 0, chests: 0 };
+      t.total += stack;
+      totals.set(hash, t);
+    }
+    for (const hash of new Set(c.items.map((i) => i[0]))) totals.get(hash).chests++;
+  }
+  return totals;
+}
+
+function bindSearch() {
+  const input = $('search');
+  const list = $('suggestions');
+  const suggest = () => {
+    const q = normalize(input.value.trim());
+    list.replaceChildren();
+    if (q.length < 2 || !world || !items) return (list.hidden = true);
+    const matches = [...itemTotals().values()]
+      .map((t) => ({ ...t, name: itemName(items, t.hash), en: items.byHash.get(t.hash)?.[2] ?? '' }))
+      .filter((t) => normalize(t.name).includes(q) || normalize(t.en).includes(q))
+      .sort((a, b) => normalize(a.name).indexOf(q) - normalize(b.name).indexOf(q) || b.total - a.total)
+      .slice(0, 8);
+    if (!matches.length) list.append(el('li', { class: 'empty', text: 'Nenhum baú tem isso.' }));
+    for (const m of matches) {
+      list.append(
+        el('li', {},
+          el('button', { type: 'button', onclick: () => pick(m.hash) },
+            itemIcon(items, m.hash, 24), el('span', { class: 'name', text: m.name }), el('span', { class: 'qty', text: fmt.format(m.total) }))),
+      );
+    }
+    list.hidden = false;
+  };
+  const pick = (hash) => {
+    found = hash;
+    input.value = itemName(items, hash);
+    list.hidden = true;
+    renderSearchResults();
+    mapView.invalidate();
+  };
+  input.addEventListener('input', suggest);
+  input.addEventListener('focus', suggest);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') list.querySelector('button')?.click();
+    if (e.key === 'Escape') list.hidden = true;
+  });
+  $('search-clear').addEventListener('click', () => {
+    found = null;
+    input.value = '';
+    list.hidden = true;
+    renderSearchResults();
+    mapView.invalidate();
+  });
+}
+
+function renderSearchResults() {
+  const out = $('search-results');
+  $('search-clear').hidden = found == null;
+  out.replaceChildren();
+  if (found == null || !world) return;
+  const chests = world.containers
+    .filter((c) => !c.tomb)
+    .map((c) => ({ c, n: c.items.filter((i) => i[0] === found).reduce((a, i) => a + i[1], 0) }))
+    .filter((r) => r.n > 0)
+    .sort((a, b) => b.n - a.n);
+  const total = chests.reduce((a, r) => a + r.n, 0);
+  out.append(el('p', { class: 'day-info', text: `${fmt.format(total)} em ${chests.length} ${chests.length === 1 ? 'baú' : 'baús'}` }));
+  const ul = el('ul', { class: 'found' });
+  for (const { c, n } of chests.slice(0, 30)) {
+    const g = mapView.settlements && baseAt(mapView.settlements, c.x, c.z, BASE_MARGIN);
+    const where = g && g.count >= BASE_MIN_PIECES ? baseName(g, state?.pins, world) : `${Math.round(c.x)}, ${Math.round(c.z)}`;
+    ul.append(
+      el('li', {},
+        el('button', {
+          type: 'button',
+          onclick: () => {
+            mapView.goTo(c.x, c.z, Math.min(mapView.view.metersPerPixel, 0.8));
+            openCard([c.x, c.z], () => chestCard(c));
+          },
+        }, el('span', { class: 'name', text: containerTitle(c) }), el('span', { class: 'qty', text: fmt.format(n) }), el('span', { class: 'where', text: where }))),
+    );
+  }
+  out.append(ul);
+}
+
+// ---------- linha do tempo ----------
 
 async function setupTimeline() {
   let days = [];
   try {
-    days = await (await fetch('api/days', { cache: 'no-store' })).json();
+    days = await getJSON('api/days');
   } catch {}
-  const select = $('day');
   const info = $('day-info');
+  const slider = $('day');
+  const play = $('day-play');
+  const label = $('day-label');
   if (!days.length) {
     info.textContent = 'Nenhum dia guardado ainda.';
-    select.disabled = true;
+    slider.disabled = play.disabled = true;
     return;
   }
-  for (const d of days) {
-    const opt = document.createElement('option');
-    opt.value = d.date;
-    opt.textContent = `${fmtDay(d)} às ${d.time}`;
-    select.append(opt);
-  }
+  const ordered = [...days].reverse();
+  // Ultima posicao = agora (ao vivo).
+  slider.max = String(ordered.length);
+  slider.value = slider.max;
+  const at = (i) => (i >= ordered.length ? null : ordered[i]);
+  const chart = $('growth');
+  const renderChart = () => {
+    chart.replaceChildren(columnChart(
+      ordered.map((d, i) => ({
+        key: d.date,
+        value: d.pieces ?? 0,
+        label: dayMonth(Date.parse(`${d.date}T12:00`)),
+        tip: `${fmt.format(d.pieces ?? 0)} peças · ${d.exploredKm2.toFixed(1)} km²`,
+        active: d.date === day,
+        index: i,
+      })),
+      { height: 56, format: (v) => fmt.format(v), onPick: (r) => go(r.index) },
+    ));
+  };
   const describe = () => {
-    const d = days.find((x) => x.date === select.value);
+    const d = at(Number(slider.value));
+    label.textContent = d ? `${dayMonth(Date.parse(`${d.date}T12:00`))} às ${d.time}` : 'Agora (ao vivo)';
     info.textContent = d
       ? `${d.exploredKm2.toFixed(1)} km² explorados · ${d.pieces != null ? fmt.format(d.pieces) : '–'} construções · ${d.pins} marcações`
-      : 'Mapa ao vivo, com jogadores, portais e camas.';
+      : 'Mapa ao vivo, com jogadores, baús, portais e camas.';
+    renderChart();
   };
-  describe();
-  select.addEventListener('change', async () => {
-    const date = select.value || null;
-    select.disabled = true;
-    try {
-      if (date) dayPins = await (await fetch(`api/days/${date}/pins`)).json();
-      if (renderer) await loadWorld(renderer, date);
+  let loading = null;
+  const go = async (i) => {
+    slider.value = String(i);
+    const d = at(i);
+    const date = d?.date ?? null;
+    describe();
+    if (date === day) return;
+    const job = (async () => {
+      if (date) dayPins = await getJSON(`api/days/${date}/pins`);
+      if (mapView.renderer) await mapView.loadWorld(date);
       day = date;
       document.body.classList.toggle('past', !!date);
+      closeCard();
+      describe();
+      mapView.invalidate();
+    })();
+    loading = job;
+    try {
+      await job;
     } catch (err) {
       console.error(err);
     }
-    select.disabled = false;
-    describe();
-    dirty = true;
+  };
+  slider.addEventListener('input', () => describe());
+  slider.addEventListener('change', () => go(Number(slider.value)));
+  let playing = false;
+  play.addEventListener('click', async () => {
+    playing = !playing;
+    play.textContent = playing ? '❚❚' : '▶';
+    play.setAttribute('aria-label', playing ? 'Pausar' : 'Tocar a linha do tempo');
+    if (!playing) return;
+    let i = Number(slider.value) >= ordered.length ? 0 : Number(slider.value);
+    while (playing && i <= ordered.length) {
+      const t0 = performance.now();
+      await go(i);
+      await loading;
+      await new Promise((r) => setTimeout(r, Math.max(0, PLAY_STEP_MS - (performance.now() - t0))));
+      i++;
+    }
+    playing = false;
+    play.textContent = '▶';
+    play.setAttribute('aria-label', 'Tocar a linha do tempo');
+  });
+  describe();
+}
+
+// ---------- entrada ----------
+
+function bindPanel() {
+  for (const input of document.querySelectorAll('#layers input')) {
+    layers[input.dataset.layer] = input.checked;
+    input.addEventListener('change', () => {
+      layers[input.dataset.layer] = input.checked;
+      mapView.showPieces = layers.pieces;
+      if (input.dataset.layer === 'trails') loadTrails();
+      mapView.invalidate();
+    });
+  }
+  $('trail-hours').addEventListener('change', (e) => {
+    trailHours = Number(e.target.value);
+    const box = document.querySelector('[data-layer="trails"]');
+    if (!box.checked) {
+      box.checked = true;
+      layers.trails = true;
+    }
+    loadTrails();
+  });
+  const panel = $('panel');
+  $('panel-toggle').addEventListener('click', () => {
+    const collapsed = panel.classList.toggle('collapsed');
+    $('panel-toggle').setAttribute('aria-expanded', String(!collapsed));
+  });
+  if (window.matchMedia('(max-width: 720px)').matches) {
+    panel.classList.add('collapsed');
+    $('panel-toggle').setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCard();
   });
 }
 
 async function main() {
   readHash();
-  resize();
-  bindInput();
+  bindPanel();
+  bindSearch();
   pollState();
   pollHistory();
+  pollWorld();
   setupTimeline();
   setInterval(tickSave, 1000);
-  requestAnimationFrame(frame);
+  setInterval(loadTrails, TRAILS_EVERY_MS);
   try {
-    const art = await (await fetch(`${GAME}/art.json`)).json();
-    const r = new MapRenderer(mapCanvas);
-    biomeTable = biomeColors(art);
-    const [, iconList] = await Promise.all([
-      r.loadArt(GAME, art),
-      Promise.all(['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss'].map(loadIcon)),
-    ]);
-    await loadWorld(r, null);
-    r.showPieces = layers.pieces;
-    icons = Object.fromEntries(iconList);
-    await document.fonts.load('700 16px Norse');
-    renderer = r;
-    dirty = true;
+    await mapView.start();
+    mapView.showPieces = layers.pieces;
     $('loading').classList.add('done');
+    refreshCard();
   } catch (err) {
     console.error(err);
-    const el = $('loading');
-    el.classList.add('error');
-    el.textContent = `Não deu para abrir o mapa: ${err.message}`;
+    const box = $('loading');
+    box.classList.add('error');
+    box.textContent = `Não deu para abrir o mapa: ${err.message}`;
   }
 }
 
