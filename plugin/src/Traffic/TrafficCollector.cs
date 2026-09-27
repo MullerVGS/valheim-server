@@ -11,7 +11,8 @@ namespace ValheimMetrics.Traffic
 {
     // Quanto cada ZDO custa na rede. Enviado: ZDO.Serialize so roda em ZDOMan.SendZDOs, uma vez por
     // ZDO por jogador que o recebe, num pacote limpo; o cabecalho fixo em volta (id, revisoes, dono,
-    // posicao, tamanho) soma 42 bytes. Recebido: ZDO.Deserialize so roda para revisao aceita de dono.
+    // posicao, tamanho) soma 42 bytes. Recebido: ZDO.Deserialize so roda para revisao aceita de dono;
+    // o tamanho e lido antes e o prefab depois, porque ZDO novo so ganha prefab dentro do Deserialize.
     // Por prefab vira contador; os ZDOs e as zonas de 64 m mais caros de cada janela vao para o log.
     sealed class TrafficCollector : ICollector
     {
@@ -32,20 +33,37 @@ namespace ValheimMetrics.Traffic
             Patcher.Patch(harmony, typeof(ZDO), "Serialize", new[] { typeof(ZPackage) }, self,
                 postfix: nameof(SerializePostfix), tag: "traffic");
             Patcher.Patch(harmony, typeof(ZDO), "Deserialize", new[] { typeof(ZPackage) }, self,
-                prefix: nameof(DeserializePrefix), tag: "traffic");
+                prefix: nameof(DeserializePrefix), postfix: nameof(DeserializePostfix), tag: "traffic");
         }
 
-        static void SerializePostfix(ZDO __instance, ZPackage pkg) => Count(__instance, pkg, sent: true);
+        static void DeserializePrefix(ZPackage pkg, out int __state)
+        {
+            try
+            {
+                __state = pkg.Size();
+            }
+            catch
+            {
+                __state = -1;
+                Patcher.Errors++;
+            }
+        }
 
-        static void DeserializePrefix(ZDO __instance, ZPackage pkg) => Count(__instance, pkg, sent: false);
+        static void DeserializePostfix(ZDO __instance, int __state)
+        {
+            if (__state >= 0)
+                Count(__instance, __state, sent: false);
+        }
 
-        static void Count(ZDO zdo, ZPackage pkg, bool sent)
+        static void SerializePostfix(ZDO __instance, ZPackage pkg) => Count(__instance, pkg.Size(), sent: true);
+
+        static void Count(ZDO zdo, int size, bool sent)
         {
             try
             {
                 var pos = zdo.GetPosition();
                 Book.Add(new ZdoKey(zdo.m_uid.UserID, zdo.m_uid.ID), zdo.GetPrefab(), pos.x, pos.z, zdo.GetOwner(),
-                    pkg.Size() + HeaderBytes, sent);
+                    size + HeaderBytes, sent);
             }
             catch
             {

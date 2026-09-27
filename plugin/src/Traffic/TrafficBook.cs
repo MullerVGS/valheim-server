@@ -103,6 +103,8 @@ namespace ValheimMetrics.Traffic
 
             if (!_zdos.TryGetValue(key, out var hot))
                 _zdos[key] = hot = new HotZdo { Key = key, Prefab = prefab };
+            if (prefab != 0)
+                hot.Prefab = prefab;
             hot.X = x;
             hot.Z = z;
             hot.Owner = owner;

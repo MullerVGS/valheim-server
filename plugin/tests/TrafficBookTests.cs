@@ -78,4 +78,15 @@ public class TrafficBookTests
 
         Assert.Equal((100f, 64f, 8L), (hot.X, hot.Z, hot.Owner));
     }
+
+    [Fact]
+    public void Prefab_conhecido_depois_substitui_o_zero()
+    {
+        var book = new TrafficBook();
+        book.Add(A, 0, 0, 0, 7, 10, sent: false);
+        book.Add(A, 42, 0, 0, 7, 10, sent: false);
+        book.Add(A, 0, 0, 0, 7, 10, sent: false);
+
+        Assert.Equal(42, book.Take(1, 1).TopZdos[0].Prefab);
+    }
 }
