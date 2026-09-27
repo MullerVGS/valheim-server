@@ -130,8 +130,8 @@ void main() {
       settled += texture(uGround, sp + o * px).r;
     }
     settled /= 9.0;
-    vec3 earth = vec3(0.34, 0.27, 0.18) * light;
-    col.rgb = mix(col.rgb, mix(col.rgb, earth, 0.55), settled);
+    vec3 earth = vec3(0.25, 0.2, 0.13) * light;
+    col.rgb = mix(col.rgb, mix(col.rgb, earth, 0.45), settled);
   }
 
   // Arvores pintadas.
@@ -170,18 +170,22 @@ void main() {
       bool there = nb.a > 0.0;
       bool tiny = small || (there && nb.a >= 20000.0);
       if (here != there) ink = max(ink, tiny ? 0.0 : 1.0);
-      else if (here && !tiny && abs(mod(nb.a, 10000.0) - mod(pc.a, 10000.0)) > 0.6) ink = max(ink, 0.45);
+      else if (here && !tiny && abs(mod(nb.a, 10000.0) - mod(pc.a, 10000.0)) > 0.6) ink = max(ink, 0.35);
     }
     if (here) {
       // Pintada no pergaminho, na luz de uma superficie plana.
       vec4 grain = texture(uBackground, vUv * 1600.0);
       float g = max(max(grain.r, grain.g), grain.b);
       vec3 flatLight = max(normalize(uSunDir).y, 0.0) * uSunColor.rgb * uLightColor + uAmbientColor.rgb * uAmbientLightColor;
-      vec3 painted = pc.rgb * (0.55 + 0.9 * g) * flatLight * 1.35;
-      col.rgb = small ? mix(col.rgb, painted, 0.8) : painted;
+      // Cor apagada e puxada para o tom do pergaminho, deixando o terreno transparecer: tinta velha,
+      // nao cor de interface.
+      float lum = dot(pc.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 sepia = mix(vec3(1.0), bg.rgb / max(max(bg.r, bg.g), max(bg.b, 1e-3)), 0.3);
+      vec3 painted = mix(vec3(lum), pc.rgb, 0.5) * sepia * (0.6 + 0.8 * g) * flatLight * 1.1;
+      col.rgb = mix(col.rgb, painted, small ? 0.5 : 0.72);
     }
-    col.rgb *= 1.0 - 0.38 * shade;
-    col.rgb = mix(col.rgb, vec3(0.045, 0.03, 0.02), ink * 0.85);
+    col.rgb *= 1.0 - 0.3 * shade;
+    col.rgb = mix(col.rgb, vec3(0.07, 0.045, 0.028), ink * 0.6);
   }
 
   // Nuvens passando, ralas sobre as bases para nao esconder o que foi construido.
