@@ -4,6 +4,10 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
 
 - `public/mapgl.js`: porte para WebGL2 do shader `Custom/mapshader` do jogo (material `minimap`),
   com as mesmas texturas de arte, as cores de bioma do prefab do `Minimap` e o pipeline de cor linear.
+- `public/pieces.js`: construções do `pieces.bin` rasterizadas numa textura do tamanho da tela, que o shader
+  do mapa pinta com a mesma luz, o pergaminho, as nuvens e a névoa do terreno: contorno de tinta, sombra do
+  sol, chão pisado sem árvores em volta e nuvens ralas sobre as bases. Precisa de `EXT_color_buffer_float`;
+  sem ele o mapa abre sem construções.
 - `server.mjs`: Node sem dependências. Estáticos, terreno com ETag (sempre revalida) e
   `/api/state` / `/api/history` com consultas fixas ao Victoria (`VM_URL`, cache de 5 s / 60 s).
 - `terrain.mjs`: dados do mapa, recortados pelo que as mesas de cartografia mostram (+2 px para a borda da

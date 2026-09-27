@@ -162,6 +162,17 @@ html, body {
 .layers label { display: flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
 .layers input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .layers img { width: 20px; height: 20px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
+.layers .swatch {
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  background:
+    linear-gradient(90deg, transparent 45%, #0b0805 45% 55%, transparent 55%),
+    linear-gradient(#9e6e42 0 50%, #a3a194 50%);
+  border: 2px solid #0b0805;
+  border-radius: 2px;
+  filter: drop-shadow(0 1px 1px #000);
+}
 .layers .aa { width: 20px; text-align: center; font-family: var(--norse); }
 
 .hud {

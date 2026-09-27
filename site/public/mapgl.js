@@ -3,6 +3,8 @@
 // mesma ordem de mistura. O jogo roda em espaco de cor linear: textura sRGB e decodificada na
 // amostragem, cor de material entra linearizada e a saida volta para sRGB no fim.
 
+import { PiecesLayer } from './pieces.js';
+
 export const WORLD_SIZE = 2048 * 12; // metros cobertos pelo mapa (uv 0..1)
 
 const VERT = `#version 300 es
@@ -27,6 +29,9 @@ uniform float uZoom, uNormalWidth, uNormalIntensity, uSharedFade;
 uniform vec3 uMapCenter, uLightColor, uAmbientLightColor, uCloudOffset, uLava1, uLava2, uSunDir;
 uniform vec4 uSunFogColor, uSunColor, uAmbientColor;
 uniform float uPixelRatio;
+uniform highp sampler2D uPieces;
+uniform sampler2D uGround;
+uniform float uPiecesOn, uMppDevice;
 
 // Amostra com mipmap usando a derivada da uv continua: a uv quantizada tem derivada zero dentro do
 // bloco e salto na borda, o que escolheria o mip errado e riscaria a borda de cada bloco.
@@ -115,14 +120,73 @@ void main() {
   col = mix(col, vec4(sky * vec3(c1, c1, 1.0), c1) * vec4(0.7, 0.5, c1, c1), mask.y);
   col = mix(col, vec4(sky * vec3(1.2, 0.7, 0.7), c2), mask.y * c2);
 
+  // Chao pisado em volta das construcoes: terra clara e sem as arvores pintadas.
+  float settled = 0.0;
+  if (uPiecesOn > 0.5 && h >= 29.5) {
+    vec2 px = 1.0 / vec2(textureSize(uGround, 0));
+    vec2 sp = gl_FragCoord.xy * px;
+    for (int k = 0; k < 9; k++) {
+      vec2 o = vec2(float(k % 3) - 1.0, float(k / 3) - 1.0) * 1.5 * uPixelRatio;
+      settled += texture(uGround, sp + o * px).r;
+    }
+    settled /= 9.0;
+    vec3 earth = vec3(0.34, 0.27, 0.18) * light;
+    col.rgb = mix(col.rgb, mix(col.rgb, earth, 0.55), settled);
+  }
+
   // Arvores pintadas.
   vec4 trees = tiled(uForest, p, 150.0) * uForestColor;
   trees.rgb = mix(trees.rgb, trees.rgb * light, 0.8);
-  col = mix(col, trees, mask.x * trees.a);
+  col = mix(col, trees, mask.x * trees.a * (1.0 - settled));
 
-  // Nuvens passando.
+  // Construcoes (pieces.js). Alfa = 1000 + altura + 10000 se for parede ou poste + 20000 se a peca
+  // ficou menor que a tela desenha; 0 = vazio.
+  if (uPiecesOn > 0.5) {
+    ivec2 fc = ivec2(gl_FragCoord.xy);
+    vec4 pc = texelFetch(uPieces, fc, 0);
+    bool here = pc.a > 0.0;
+    bool small = here && pc.a >= 20000.0;
+    float y = here ? mod(pc.a, 10000.0) - 1000.0 : h;
+    // Sombra: alguma peca mais alta entre este ponto e o sol, a ate 4 m.
+    vec2 toSun = normalize(uSunDir.xz + vec2(1e-5));
+    float rise = max(uSunDir.y, 0.05) / max(length(uSunDir.xz), 1e-3);
+    float shade = 0.0;
+    for (int k = 1; k <= 8; k++) {
+      float dm = float(k) * 0.5;
+      vec2 off = toSun * dm / uMppDevice;
+      if (length(off) < 1.0) continue;
+      vec4 s = texelFetch(uPieces, fc + ivec2(round(off)), 0);
+      if (s.a <= 0.0) continue;
+      float top = mod(s.a, 10000.0) - 1000.0 + (mod(s.a, 20000.0) >= 10000.0 ? 2.0 : 0.4);
+      if (top - y > dm * rise) shade = max(shade, 1.0 - float(k - 1) / 10.0);
+    }
+    // Tinta: borda da construcao com o chao (dos dois lados) e degrau entre alturas. Peca pequena
+    // demais para ter contorno fica so na cor.
+    float ink = 0.0;
+    float w = max(1.0, floor(uPixelRatio + 0.5));
+    for (int k = 0; k < 4; k++) {
+      ivec2 d = ivec2(k == 0 ? 1 : k == 1 ? -1 : 0, k == 2 ? 1 : k == 3 ? -1 : 0) * int(w);
+      vec4 nb = texelFetch(uPieces, fc + d, 0);
+      bool there = nb.a > 0.0;
+      bool tiny = small || (there && nb.a >= 20000.0);
+      if (here != there) ink = max(ink, tiny ? 0.0 : 1.0);
+      else if (here && !tiny && abs(mod(nb.a, 10000.0) - mod(pc.a, 10000.0)) > 0.6) ink = max(ink, 0.45);
+    }
+    if (here) {
+      // Pintada no pergaminho, na luz de uma superficie plana.
+      vec4 grain = texture(uBackground, vUv * 1600.0);
+      float g = max(max(grain.r, grain.g), grain.b);
+      vec3 flatLight = max(normalize(uSunDir).y, 0.0) * uSunColor.rgb * uLightColor + uAmbientColor.rgb * uAmbientLightColor;
+      vec3 painted = pc.rgb * (0.55 + 0.9 * g) * flatLight * 1.35;
+      col.rgb = small ? mix(col.rgb, painted, 0.8) : painted;
+    }
+    col.rgb *= 1.0 - 0.38 * shade;
+    col.rgb = mix(col.rgb, vec3(0.045, 0.03, 0.02), ink * 0.85);
+  }
+
+  // Nuvens passando, ralas sobre as bases para nao esconder o que foi construido.
   float cloud = textureGrad(uCloud, p * 7.0 - uCloudOffset.xz, dFdx(vUv) * 7.0, dFdy(vUv) * 7.0).a;
-  col = mix(col, vec4(uLightColor * uSunColor.rgb, 1.0), cloud);
+  col = mix(col, vec4(uLightColor * uSunColor.rgb, 1.0), cloud * (1.0 - 0.7 * settled));
 
   // Nevoa de guerra: o pergaminho, escurecendo para a borda do mundo.
   float f1 = smooth01(clamp(fogOwn * 2.0, 0.0, 1.0));
@@ -206,6 +270,12 @@ export class MapRenderer {
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
     this.textures = {};
     this.units = {};
+    this.pieces = PiecesLayer.supported(gl) ? new PiecesLayer(gl, 14) : null;
+    this.showPieces = true;
+  }
+
+  setPieces(pieces) {
+    this.pieces?.setPieces(pieces);
   }
 
   texture(name, setup) {
@@ -332,6 +402,15 @@ export class MapRenderer {
       else if (v.length === 3) gl.uniform3fv(l, v);
       else gl.uniform4fv(l, v);
     };
+    const piecesOn = !!this.pieces && this.showPieces && this.pieces.count > 0;
+    this.pieces?.render(view, w, h, piecesOn);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.prog);
+    gl.bindVertexArray(this.vao);
+    if (this.loc.uPieces) gl.uniform1i(this.loc.uPieces, 14);
+    if (this.loc.uGround) gl.uniform1i(this.loc.uGround, 15);
+    set('uPiecesOn', piecesOn ? 1 : 0);
+    set('uMppDevice', view.metersPerPixel / dpr);
     const halfW = (w / dpr) * view.metersPerPixel * 0.5;
     const halfH = (h / dpr) * view.metersPerPixel * 0.5;
     set('uCenter', [view.x / WORLD_SIZE + 0.5, view.z / WORLD_SIZE + 0.5]);
