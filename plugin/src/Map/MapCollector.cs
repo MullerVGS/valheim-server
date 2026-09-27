@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -26,7 +27,6 @@ namespace ValheimMetrics.Map
 
         static readonly int TablePrefab = "piece_cartographytable".GetStableHashCode();
         static readonly int TombstonePrefab = "Player_tombstone".GetStableHashCode();
-        static readonly Dictionary<int, string> PortalPrefabs = Named("portal_wood", "portal_stone", "portal");
         static readonly Dictionary<int, string> BedPrefabs = Named("bed", "piece_bed02");
 
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -71,6 +71,15 @@ namespace ValheimMetrics.Map
             LoadNames();
         }
 
+        // Portal e o que o proprio jogo conecta (Game.PortalPrefabHash): madeira, pedra e os que vierem.
+        static bool IsPortal(int prefab) => Game.instance != null && Game.instance.PortalPrefabHash.Contains(prefab);
+
+        static string PrefabName(int prefab)
+        {
+            var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(prefab) : null;
+            return go != null ? go.name : prefab.ToString(Inv);
+        }
+
         static Dictionary<int, string> Named(params string[] names)
         {
             var map = new Dictionary<int, string>();
@@ -92,7 +101,7 @@ namespace ValheimMetrics.Map
                     if (!KnownTombstones.Contains(__instance.m_uid) && !NewTombstones.ContainsKey(__instance.m_uid))
                         NewTombstones[__instance.m_uid] = Time.realtimeSinceStartupAsDouble;
                 }
-                else if (PortalPrefabs.ContainsKey(prefab))
+                else if (IsPortal(prefab))
                     Portals.Add(__instance.m_uid);
                 else if (BedPrefabs.ContainsKey(prefab))
                     Beds.Add(__instance.m_uid);
@@ -164,12 +173,20 @@ namespace ValheimMetrics.Map
                         if (!NewTombstones.ContainsKey(zdo.m_uid))
                             KnownTombstones.Add(zdo.m_uid);
                     }
-                    else if (PortalPrefabs.ContainsKey(prefab))
-                        Portals.Add(zdo.m_uid);
                     else if (BedPrefabs.ContainsKey(prefab))
                         Beds.Add(zdo.m_uid);
                 }
             }
+            // Portal nao mora no balde por setor: o ZDOMan guarda a parte, para conectar os pares.
+            if (AccessTools.Field(typeof(ZDOMan), "m_portalObjects")?.GetValue(ZDOMan.instance) is IDictionary portals)
+            {
+                foreach (IEnumerable list in portals.Values)
+                    foreach (ZDO zdo in list)
+                        if (IsPortal(zdo.GetPrefab()))
+                            Portals.Add(zdo.m_uid);
+            }
+            else
+                Plugin.Log.LogWarning("Mapa: ZDOMan.m_portalObjects nao encontrado; portais so aparecem quando alguem mexe neles.");
             Plugin.Log.LogInfo($"Mapa: {Tables.Count} mesas, {Portals.Count} portais, {Beds.Count} camas, " +
                 $"{KnownTombstones.Count} tumulos no mundo ({sw.ElapsedMilliseconds} ms).");
             Refresh();
@@ -203,7 +220,7 @@ namespace ValheimMetrics.Map
 
         static void Refresh()
         {
-            _portals = Describe(Portals, zdo => new[] { "tag", zdo.GetString(ZDOVars.s_tag), "prefab", PortalPrefabs[zdo.GetPrefab()] });
+            _portals = Describe(Portals, zdo => new[] { "tag", zdo.GetString(ZDOVars.s_tag), "prefab", PrefabName(zdo.GetPrefab()) });
             _beds = Describe(Beds, zdo => new[] { "owner", zdo.GetString(ZDOVars.s_ownerName) });
             _tables = Describe(Tables, zdo => new string[0]);
             _zones = CountZones();
