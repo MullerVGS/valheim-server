@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR" class="has-rail">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>Placas · Jahmaica</title>
+  <meta name="description" content="Editor de placas: escreva, veja como fica no jogo e siga os passos para colar">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Averia: a do site. Noto: as fontes de reserva da placa no jogo (letras fora do Norse, blocos, emoji). -->
+  <link href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:wght@400;700&family=Noto+Emoji:wght@300&family=Noto+Sans+JP:wght@300&family=Noto+Sans:wght@200&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="placas.css">
+  <script>try { if (localStorage.getItem('jahmaica.sidebar') === 'open') document.documentElement.classList.add('rail-pinned'); } catch {}</script>
+  <script type="module" src="sidebar.js"></script>
+</head>
+<body class="placas">
+  <main class="studio">
+    <header class="studio-head">
+      <h1>Placas</h1>
+      <p>Escreva, veja como a placa fica no jogo e cole na ordem.</p>
+      <span id="catalog-state" class="catalog-state"></span>
+    </header>
+
+    <section class="lib panel" aria-label="Ícones e artes">
+      <div class="lib-tabs" role="tablist">
+        <button type="button" role="tab" id="tab-items" aria-selected="true" aria-controls="lib-list">Itens <span class="count" id="count-items"></span></button>
+        <button type="button" role="tab" id="tab-arts" aria-selected="false" aria-controls="lib-list">Artes <span class="count" id="count-arts"></span></button>
+      </div>
+      <label class="lib-search">
+        <span class="sr-only">Procurar</span>
+        <input id="lib-q" type="search" placeholder="Procurar item…" autocomplete="off" spellcheck="false">
+      </label>
+      <div id="lib-list" class="lib-list" role="tabpanel" aria-labelledby="tab-items"></div>
+      <p class="lib-foot" id="lib-foot">Clique para pôr o código no texto.</p>
+    </section>
+
+    <section class="work">
+      <div class="viewer panel">
+        <canvas id="sign" aria-label="Como a placa fica no jogo"></canvas>
+        <div class="viewer-top">
+          <span class="viewer-title">Prévia</span>
+          <span id="overflow" class="badge" hidden></span>
+        </div>
+        <div id="knobs" class="knobs" hidden>
+          <label>Lado do ícone <output id="size-out"></output>
+            <input id="size" type="range" min="1" max="18" step="0.5">
+          </label>
+          <label>Brilho <output id="light-out"></output>
+            <input id="light" type="range" min="10" max="140" step="10">
+          </label>
+          <button id="knobs-reset" type="button" class="ghost">Padrão</button>
+        </div>
+        <p id="hover" class="hover-line" hidden></p>
+      </div>
+
+      <div class="editor panel">
+        <div class="toolbar" role="toolbar" aria-label="Inserir no texto">
+          <label class="bar-btn bar-color" data-tip="Cor do texto a partir daqui: &lt;#rgb&gt;">
+            <input id="color" type="color" value="#ff8800">
+            <span>Cor</span>
+          </label>
+          <button type="button" class="bar-btn" data-insert="size" data-tip="Tamanho da letra em unidades da tábua (a tábua tem 20 × 10)">Tamanho</button>
+          <button type="button" class="bar-btn" data-insert="unlit" data-tip="{u}: sem iluminação, brilha no escuro como os ícones">Brilho</button>
+          <button type="button" class="bar-btn" data-insert="mark" data-tip="Faixa de cor atrás do texto (sempre meio transparente)">Faixa</button>
+          <span class="bar-gap"></span>
+          <button type="button" class="bar-btn" id="share" data-tip="Copia um link que abre esta placa">Link</button>
+          <button type="button" class="bar-btn" id="clear" data-tip="Apaga o texto">Limpar</button>
+        </div>
+        <div class="field">
+          <pre id="mirror" class="mirror" aria-hidden="true"></pre>
+          <textarea id="text" spellcheck="false" autocomplete="off" aria-label="Texto da placa"
+            placeholder="Escreva o texto da placa. Enter quebra a linha. Tags como &lt;#f80&gt; e &lt;size=6&gt; funcionam, e :mel: vira o ícone do item."></textarea>
+        </div>
+        <div class="editor-foot">
+          <span id="stats"></span>
+          <span id="problems" class="problems"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="steps panel" aria-label="Como pôr no jogo">
+      <h2>Passo a passo</h2>
+      <ol id="steps" class="step-list"></ol>
+      <p id="steps-done" class="steps-note" hidden></p>
+    </section>
+  </main>
+  <div id="tip" class="tip" role="tooltip" hidden></div>
+  <script type="module" src="placas.js"></script>
+</body>
+</html>

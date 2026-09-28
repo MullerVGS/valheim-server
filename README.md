@@ -226,6 +226,8 @@ texto normal da placa, que some no escuro).
 
 Trocar `catalog.txt` ou `custom.txt` com o servidor no ar basta: o plugin confere os arquivos a
 cada 5 s, recarrega e redesenha as placas, sem restart.
+O site (`/placas`) le os mesmos dois arquivos e oferece um editor com a placa simulada e o passo a
+passo do que colar; linhas `#@` no `custom.txt` organizam a galeria de desenhos (ver `site/README.md`).
 Conferir em `/metrics`: `valheim_sign_icons_catalog_entries`, `valheim_sign_icons_catalog_reloads_total`,
 `valheim_sign_icons_signs`, `valheim_sign_icons_long_texts`, `valheim_sign_icons_changes_total` e
 `valheim_exporter_patch_ok{target="ZDO.Deserialize"}`.

@@ -20,7 +20,7 @@ const NAV = [
     { label: 'Mapa', href: './', icon: 'map', match: ['/', '/base/', '/jogador/'] },
   ] },
   { title: 'Ferramentas', items: [
-    { label: 'Placas', href: 'placas', icon: 'sign', match: ['/placas'], soon: true },
+    { label: 'Placas', href: 'placas', icon: 'sign', match: ['/placas'] },
   ] },
 ];
 

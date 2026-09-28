@@ -15,6 +15,9 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   bases que ergueu, lápides, camas, marcações) e `/base/<x>,<z>` (`base.html`/`base.js`: construtores, materiais,
   crescimento dia a dia, estoque somado e cada baú). No mapa, clicar num jogador, base ou baú abre um cartão com
   o básico e o link da página; o painel tem busca de item nos baús, rastros e a linha do tempo com play.
+- `/placas` (`placas.html`/`placas.js`/`placas.css`): editor de placas, página de computador numa janela só.
+  Texto livre à esquerda de quem escreve, a placa como o jogo desenha e o passo a passo do que colar (ver
+  [Placas](#placas)). Carrega só o que é dela: o mapa não baixa nada de placas e vice-versa.
 - `public/sidebar.js`: barra lateral de navegação de todas as páginas (mapa, base, jogador). Página ou ferramenta
   nova entra como item em `NAV`; `soon: true` mostra "em breve" sem link. Tela larga: trilho de ícones que abre
   com os nomes e lembra a escolha (`localStorage`); tela média: abre por cima; celular: gaveta pelo botão de menu (fecha no toque fora, Esc ou arrastando
@@ -43,6 +46,29 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
 - `GET /api/world`: baús (`items` = `[hash do prefab, quantidade, qualidade]`), camas, a contagem de peças por
   construtor numa grade de `cell` m (`[cx, cz, construtor, peças]`) e as áreas de base (`baseAreas` =
   `[x, z, raio, prefab]`), do save ao vivo.
+
+## Placas
+
+O editor usa o mesmo catálogo de ícones do plugin (`SIGNS_CATALOG`, no compose = `VALHEIM_SIGN_ICONS_CATALOG`) e o
+`custom.txt` ao lado dele, lidos do volume do jogo: trocar qualquer um dos dois no servidor já muda o site, sem
+deploy. `signs.mjs` confere tamanho e data a cada pedido (no máximo a cada 5 s), relê o que parou de mudar há
+2 s e só roda quando alguém abre a página. Sem catálogo, o editor funciona só com texto.
+
+- `public/signcode.js`: as regras do plugin (`plugin/src/Signs`) em JS, sem DOM — código de ícone, `Compose`
+  (lado e brilho), abreviações, `>>` e o corte em pedaços de 50, mais trocas que encurtam sem mudar a placa
+  (`<#ff8800>` → `<#f80>`, texto da abreviação → `{u}`). O servidor usa o mesmo leitor de catálogo. Mudou lá,
+  muda aqui: `node --test test/*.test.mjs` usa os catálogos de brinquedo dos testes do plugin.
+- `public/signsim.js`: o TextMeshPro da placa reescrito (parser, quebra, auto-size de 1 a 8, métricas das
+  fontes do jogo) e uma cena escura com bloom no que é sem iluminação. A prévia desenha o texto que o
+  servidor gravaria, então ícone e arte saem pelo mesmo caminho que texto.
+- Galeria: itens em miniatura de um atlas que o servidor monta dos próprios desenhos do catálogo; artes do
+  `custom.txt` em grupos, com miniatura feita pela simulação. Linhas `#@` no `custom.txt` (o plugin ignora
+  comentário) organizam as artes: `#@ grupo <título>`, `#@ dica <texto>`, `#@ nome <id> <nome>` (o que o
+  clique escreve, se levar ao mesmo id) e `#@ vitrine <id> …` (o que vira miniatura; o resto pela busca).
+  Sem `#@ grupo`, cada comentário comum abre um grupo com o texto dele.
+- `GET /api/signs`: índice (parâmetros, abreviações, itens com nome, grupos, apelidos), gzip, revalida por
+  ETag. `GET /api/signs/atlas.png?v=` e `GET /api/signs/entry/<id>?v=` (desenho com e sem rótulo): com a
+  versão do índice no endereço, cache eterno no navegador.
 
 ## Sem spawn (área de base)
 
@@ -101,7 +127,8 @@ python3 tools/build_terrain.py world.bin data/terrain-full.bin
 ## Rodar
 
 ```sh
-MAP_DIR=/caminho/map SAVE_DIR=/caminho/worlds_local/<mundo> VM_URL=http://127.0.0.1:8428 PORT=8787 node server.mjs
+MAP_DIR=/caminho/map SAVE_DIR=/caminho/worlds_local/<mundo> VM_URL=http://127.0.0.1:8428 PORT=8787 \
+  SIGNS_CATALOG=/caminho/sign-icons/catalog.txt node server.mjs
 ```
 
 No compose do repositório é o serviço `site` (profile `site`):
