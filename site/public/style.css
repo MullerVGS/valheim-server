@@ -976,7 +976,6 @@ body.page { min-height: 100vh; background: radial-gradient(ellipse at 50% -10%, 
 .hide-dialog h2 { margin: 0 0 10px; font-family: var(--norse); font-size: 26px; font-weight: 400; line-height: 1.1; color: var(--accent); }
 .hide-dialog p { margin: 0 0 10px; line-height: 1.4; }
 .hide-dialog .keep { padding: 8px 10px; background: rgba(242, 163, 58, 0.1); border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0; }
-.hide-dialog .fine { font-size: 12.5px; color: var(--ink-soft); }
 .hide-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 .toast {

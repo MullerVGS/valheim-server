@@ -125,7 +125,6 @@ function confirmHide(spec) {
       node('h2', { id: 'hide-dialog-title', text: `Esconder «${spec.title}»?` }),
       node('p', { text: WHAT_GOES[spec.kind] }),
       node('p', { class: 'keep' }, 'Só ', node('b', { text: 'este navegador' }), ' continua vendo, com a marca de escondido, e só ele pode mostrar de novo. No jogo nada muda.'),
-      node('p', { class: 'fine', text: 'Fica guardado num cookie. Se os cookies forem apagados, o site tenta reconhecer este navegador pelo jeito dele (tela, idioma, placa de vídeo) — num navegador ou aparelho diferente, não dá.' }),
       node('div', { class: 'actions' }, cancel, ok),
     );
     dialog.addEventListener('cancel', (e) => {
