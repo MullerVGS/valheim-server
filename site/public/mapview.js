@@ -41,8 +41,10 @@ function emptyPieces() {
   return b;
 }
 
-const AMBIENT_MS = 1000 / 12;
-const AMBIENT_UNFOCUSED_MS = 1000 / 2;
+// Mapa parado: agua, nevoa e nuvens congeladas neste instante. Animar pedia redesenhar o shader
+// inteiro varias vezes por segundo, o que prendia a GPU e ficava aos trancos com a janela sem foco.
+const STILL_T = 40;
+const STILL_ENV = { ...DAY, cloudOffset: [STILL_T * 0.0012, 0, STILL_T * 0.0007] };
 
 export class MapView {
   constructor({ map, overlay, view, icons = [], onDraw, onHover, onClick, onChange }) {
@@ -62,13 +64,14 @@ export class MapView {
     this.pieces = null;
     this.settlements = null;
     this.dirty = true;
-    this.lastDraw = -Infinity;
+    this.frameQueued = false;
     this.flight = null;
+    // Icones e marcas ja desenhados com a sombra, por tamanho: sombra desfocada a cada quadro custa caro.
+    this.sprites = new Map();
     this.resize = this.resize.bind(this);
     this.resize();
     this.bindInput();
     new ResizeObserver(this.resize).observe(map);
-    requestAnimationFrame((t) => this.frame(t));
   }
 
   get width() { return this.map.clientWidth; }
@@ -80,12 +83,15 @@ export class MapView {
 
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (dpr !== this.view.pixelRatio) this.sprites.clear();
     this.view.pixelRatio = dpr;
     for (const c of [this.map, this.overlay]) {
-      c.width = Math.round(c.clientWidth * dpr);
-      c.height = Math.round(c.clientHeight * dpr);
+      const w = Math.round(c.clientWidth * dpr);
+      const h = Math.round(c.clientHeight * dpr);
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
     }
-    this.dirty = true;
+    this.invalidate();
   }
 
   toScreen(x, z) {
@@ -133,12 +139,16 @@ export class MapView {
     const half = WORLD_SIZE / 2;
     this.view.x = Math.max(-half, Math.min(half, this.view.x));
     this.view.z = Math.max(-half, Math.min(half, this.view.z));
-    this.dirty = true;
+    this.invalidate();
     this.onChange?.(this.view);
   }
 
+  // Pede um quadro; varias chamadas antes dele viram um desenho so.
   invalidate() {
     this.dirty = true;
+    if (this.frameQueued) return;
+    this.frameQueued = true;
+    requestAnimationFrame(() => this.frame());
   }
 
   bindInput() {
@@ -204,28 +214,21 @@ export class MapView {
     map.addEventListener('dblclick', (e) => this.zoomAt(...this.local(e), 0.5));
   }
 
-  // Agua e nuvens so pedem poucos quadros: a toda velocidade apenas quando a vista muda. Um mapa
-  // parado a 60 quadros e uma GPU (ou CPU, sem aceleracao) inteira para um desenho quase fixo.
-  frame(now) {
-    const ambient = document.hasFocus() ? AMBIENT_MS : AMBIENT_UNFOCUSED_MS;
-    if (this.renderer && (this.dirty || now - this.lastDraw >= ambient)) {
-      this.lastDraw = now;
-      const t = now / 1000;
-      this.renderer.draw(this.view, { ...DAY, cloudOffset: [t * 0.0012, 0, t * 0.0007] }, t);
-    }
-    if (this.dirty) {
-      this.dirty = false;
-      const ctx = this.ctx;
-      ctx.setTransform(this.view.pixelRatio, 0, 0, this.view.pixelRatio, 0, 0);
-      ctx.clearRect(0, 0, this.width, this.height);
-      this.onDraw?.(ctx, this);
-    }
-    requestAnimationFrame((t) => this.frame(t));
+  // So desenha quando algo mudou (vista, dados, camadas); parado, o mapa nao gasta nada.
+  frame() {
+    this.frameQueued = false;
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.renderer?.draw(this.view, STILL_ENV, STILL_T);
+    const ctx = this.ctx;
+    ctx.setTransform(this.view.pixelRatio, 0, 0, this.view.pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, this.width, this.height);
+    this.onDraw?.(ctx, this);
   }
 
   set showPieces(on) {
     if (this.renderer) this.renderer.showPieces = on;
-    this.dirty = true;
+    this.invalidate();
   }
 
   // Arte, icones e o mundo de agora. Lanca erro se o WebGL2 ou o terreno faltarem.
@@ -238,7 +241,7 @@ export class MapView {
     this.icons = Object.fromEntries(iconList);
     await document.fonts.load('700 16px Norse');
     this.renderer = r;
-    this.dirty = true;
+    this.invalidate();
   }
 
   // Terreno e construcoes de agora ou de um dia do historico, trocados no renderer ja montado.
@@ -263,7 +266,7 @@ export class MapView {
     if (r.pieces) r.setPieces(this.pieces ?? parsePieces(emptyPieces()));
     this.terrain = parseTerrain(terrainBuf);
     r.setTerrain(this.terrain, this.biomeTable);
-    this.dirty = true;
+    this.invalidate();
   }
 
   // Recorte do mapa em outro lugar, sem segundo contexto WebGL: desenha a outra vista no mesmo canvas,
@@ -274,13 +277,11 @@ export class MapView {
     const out = document.createElement('canvas');
     out.width = Math.round(width * dpr);
     out.height = Math.round(height * dpr);
-    const t = performance.now() / 1000;
-    const env = { ...DAY, cloudOffset: [t * 0.0012, 0, t * 0.0007] };
-    this.renderer.draw({ ...this.view, x, z, metersPerPixel }, env, t);
+    this.renderer.draw({ ...this.view, x, z, metersPerPixel }, STILL_ENV, STILL_T);
     const sw = Math.min(out.width, this.map.width);
     const sh = Math.min(out.height, this.map.height);
     out.getContext('2d').drawImage(this.map, (this.map.width - sw) / 2, (this.map.height - sh) / 2, sw, sh, 0, 0, out.width, out.height);
-    this.renderer.draw(this.view, env, t);
+    this.renderer.draw(this.view, STILL_ENV, STILL_T);
     return out;
   }
 
@@ -310,14 +311,56 @@ export class MapView {
     return arrived;
   }
 
+  // Imagem pronta de `w` x `h` px CSS (mais a folga da sombra), desenhada uma vez por `key` com a
+  // sombra do contexto atual e depois so copiada. `paint(ctx, w, h)` desenha com origem no canto.
+  sprite(key, w, h, paint) {
+    const ctx = this.ctx;
+    const blur = ctx.shadowBlur;
+    const shadow = blur ? ctx.shadowColor : '';
+    const id = `${key}|${w}|${h}|${blur}|${shadow}`;
+    let s = this.sprites.get(id);
+    if (!s) {
+      const dpr = this.view.pixelRatio;
+      const pad = Math.ceil(blur * 2) + 2;
+      const c = document.createElement('canvas');
+      c.width = Math.ceil((w + pad * 2) * dpr);
+      c.height = Math.ceil((h + pad * 2) * dpr);
+      const g = c.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, pad * dpr, pad * dpr);
+      if (blur) {
+        g.shadowBlur = blur * dpr;
+        g.shadowColor = shadow;
+      }
+      paint(g, w, h);
+      s = { c, pad };
+      if (this.sprites.size > 400) this.sprites.clear();
+      this.sprites.set(id, s);
+    }
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.drawImage(s.c, -s.pad, -s.pad, w + s.pad * 2, h + s.pad * 2);
+    ctx.restore();
+  }
+
+  // Desenha `sprite` com o centro em (sx, sy).
+  spriteAt(key, sx, sy, w, h, paint) {
+    const ctx = this.ctx;
+    const t = ctx.getTransform();
+    ctx.translate(sx - w / 2, sy - h / 2);
+    this.sprite(key, w, h, paint);
+    ctx.setTransform(t);
+  }
+
   // Desenha um icone do jogo centrado em (sx, sy).
   icon(name, sx, sy, size, alpha = 1) {
     const img = this.icons[name];
     if (!img) return;
-    const ctx = this.ctx;
     const k = size / Math.max(img.width, img.height);
+    const w = img.width * k;
+    const h = img.height * k;
+    const ctx = this.ctx;
     ctx.globalAlpha = alpha;
-    ctx.drawImage(img, sx - (img.width * k) / 2, sy - (img.height * k) / 2, img.width * k, img.height * k);
+    this.spriteAt(`icon:${name}`, sx, sy, w, h, (g) => g.drawImage(img, 0, 0, w, h));
     ctx.globalAlpha = 1;
   }
 
