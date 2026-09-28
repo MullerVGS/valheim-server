@@ -3,7 +3,7 @@
 import { MapView } from './mapview.js';
 import {
   $, BASE_MARGIN, baseAt, baseName, biomeAt, buildersIn, columnChart, containerTitle, dayMonth,
-  el, fmt, getJSON, inBox, itemGrid, itemName, loadItems, materials, normalize, PIN_ICONS, playerHref, shareBars,
+  el, fmt, getJSON, inBox, itemGrid, itemName, loadItems, materials, normalize, PIN_ICONS, playerHref, shareBars, sumStacks,
 } from './common.js';
 import { hideControl, hideIcon, myAreaAt, onHiddenChange } from './hidden.js';
 
@@ -35,25 +35,31 @@ function drawOverlay(ctx, mv) {
   ctx.shadowBlur = 2;
   const mpp = mv.view.metersPerPixel;
   const size = mpp > 1.5 ? 11 : 15;
+  // Centenas de baus numa base grande: cada um e uma copia do mesmo desenho, com a sombra ja pronta.
   for (const c of chests) {
     const [sx, sy] = mv.toScreen(c.x, c.z);
+    if (sx < -size || sy < -size || sx > mv.width + size || sy > mv.height + size) continue;
     const hot = c === flash;
-    if (hot) {
+    const box = hot ? size * 2 + 4 : size;
+    mv.spriteAt(`chest:${hot ? 1 : 0}`, sx, sy, box, box, (ctx) => {
+      const m = box / 2;
+      if (hot) {
+        ctx.beginPath();
+        ctx.arc(m, m, size, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(242,163,58,0.4)';
+        ctx.fill();
+        ctx.strokeStyle = '#f2a33a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#7a4a22';
+      ctx.strokeStyle = '#1b0f06';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(sx, sy, size, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(242,163,58,0.4)';
+      ctx.roundRect(m - size / 2, m - size * 0.36, size, size * 0.72, 2);
       ctx.fill();
-      ctx.strokeStyle = '#f2a33a';
-      ctx.lineWidth = 2;
       ctx.stroke();
-    }
-    ctx.fillStyle = '#7a4a22';
-    ctx.strokeStyle = '#1b0f06';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(sx - size / 2, sy - size * 0.36, size, size * 0.72, 2);
-    ctx.fill();
-    ctx.stroke();
+    });
   }
   for (const b of world?.beds ?? []) if (inBox(b.x, b.z, g, BASE_MARGIN)) mv.icon('bed', ...mv.toScreen(b.x, b.z), 18);
   for (const p of state?.portals ?? []) if (inBox(p.x, p.z, g, BASE_MARGIN)) mv.icon('portal', ...mv.toScreen(p.x, p.z), 20, p.connected ? 1 : 0.55);
@@ -142,13 +148,21 @@ function chestList(nodes) {
 }
 
 function stockBlock(items) {
-  const all = chests.flatMap((c) => c.items);
-  const grid = el('div', { class: 'stock' }, itemGrid(items, all));
+  // Somado uma vez e com o nome ja normalizado: o filtro percorre cada item distinto, nao cada pilha.
+  const all = sumStacks(chests.flatMap((c) => c.items)).map((row) => ({
+    row,
+    text: `${normalize(itemName(items, row[0]))} ${normalize(items.byHash.get(row[0])?.[2] ?? '')}`,
+  }));
+  const grid = el('div', { class: 'stock' }, itemGrid(items, all.map((a) => a.row)));
   const filter = el('input', { class: 'filter', type: 'search', placeholder: 'filtrar itens…', 'aria-label': 'Filtrar itens do estoque' });
+  let queued = 0;
   filter.addEventListener('input', () => {
-    const q = normalize(filter.value.trim());
-    const list = q ? all.filter(([hash]) => normalize(itemName(items, hash)).includes(q) || normalize(items.byHash.get(hash)?.[2] ?? '').includes(q)) : all;
-    grid.replaceChildren(list.length ? itemGrid(items, list) : el('p', { class: 'empty', text: 'Nada disso aqui.' }));
+    cancelAnimationFrame(queued);
+    queued = requestAnimationFrame(() => {
+      const q = normalize(filter.value.trim());
+      const list = (q ? all.filter((a) => a.text.includes(q)) : all).map((a) => a.row);
+      grid.replaceChildren(list.length ? itemGrid(items, list) : el('p', { class: 'empty', text: 'Nada disso aqui.' }));
+    });
   });
   return block('Estoque', el('p', { class: 'hint', text: `Tudo o que está nos ${chests.length} baús da base, somado.` }), filter, grid);
 }
