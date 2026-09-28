@@ -388,31 +388,37 @@ function drawTrail(ctx, points, step, now) {
   ctx.globalAlpha = 1;
 }
 
-function drawChest(ctx, sx, sy, size, highlight) {
-  const w = size;
-  const h = size * 0.72;
-  if (highlight) {
+// Bau com a sombra ja pronta: base grande tem centenas, e sombra desfocada em cada um a cada quadro pesa.
+function drawChest(mv, sx, sy, size, highlight) {
+  const box = highlight ? size * 2 + 4 : size;
+  mv.spriteAt(`chest:${highlight ? 1 : 0}`, sx, sy, box, box, (ctx) => {
+    const cx = box / 2;
+    const cy = box / 2;
+    const w = size;
+    const h = size * 0.72;
+    if (highlight) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.95, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(242,163,58,0.35)';
+      ctx.fill();
+      ctx.strokeStyle = '#f2a33a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#7a4a22';
+    ctx.strokeStyle = '#1b0f06';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(sx, sy, size * 0.95, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(242,163,58,0.35)';
+    ctx.roundRect(cx - w / 2, cy - h / 2, w, h, 2);
     ctx.fill();
-    ctx.strokeStyle = '#f2a33a';
-    ctx.lineWidth = 2;
     ctx.stroke();
-  }
-  ctx.fillStyle = '#7a4a22';
-  ctx.strokeStyle = '#1b0f06';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(sx - w / 2, sy - h / 2, w, h, 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(sx - w / 2, sy - h / 8);
-  ctx.lineTo(sx + w / 2, sy - h / 8);
-  ctx.stroke();
-  ctx.fillStyle = '#d9b35b';
-  ctx.fillRect(sx - 1.5, sy - h / 8 - 1, 3, 4);
+    ctx.beginPath();
+    ctx.moveTo(cx - w / 2, cy - h / 8);
+    ctx.lineTo(cx + w / 2, cy - h / 8);
+    ctx.stroke();
+    ctx.fillStyle = '#d9b35b';
+    ctx.fillRect(cx - 1.5, cy - h / 8 - 1, 3, 4);
+  });
 }
 
 // Olho riscado no canto de cima a direita do que so eu vejo.
@@ -651,7 +657,7 @@ function drawOverlay(ctx, mv) {
       const off = hiddenHere('chest', c);
       if (off) ctx.globalAlpha = 0.5;
       if (c.tomb) mv.icon('death', sx, sy, iconSize * 0.85, off ? 0.5 : 1);
-      else drawChest(ctx, sx, sy, mpp > 2.5 ? 12 : 15, match);
+      else drawChest(mv, sx, sy, mpp > 2.5 ? 12 : 15, match);
       ctx.globalAlpha = 1;
       if (off) hiddenBadge(ctx, sx, sy, 7);
       const lines = c.tomb ? [`${c.items.length} itens esperando`] : [c.kind, c.owner ? `de ${c.owner}` : ''].filter(Boolean);

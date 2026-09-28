@@ -102,13 +102,7 @@ export function itemIcon(items, hash, px = 32) {
 
 // Grade de itens com quantidade: [[hash, quantidade, qualidade]] somando repetidos.
 export function itemGrid(items, list, { limit = Infinity, px = 32 } = {}) {
-  const total = new Map();
-  for (const [hash, stack, quality] of list) {
-    const key = `${hash}|${quality}`;
-    const prev = total.get(key);
-    total.set(key, prev ? [hash, prev[1] + stack, quality] : [hash, stack, quality]);
-  }
-  const rows = [...total.values()].sort((a, b) => b[1] - a[1]);
+  const rows = sumStacks(list);
   const grid = el('ul', { class: 'item-grid' });
   for (const [hash, stack, quality] of rows.slice(0, limit)) {
     const name = itemName(items, hash);
@@ -121,6 +115,17 @@ export function itemGrid(items, list, { limit = Infinity, px = 32 } = {}) {
   }
   if (rows.length > limit) grid.append(el('li', { class: 'more', text: `+${rows.length - limit}` }));
   return grid;
+}
+
+// Pilhas do mesmo item e nivel somadas, da maior para a menor.
+export function sumStacks(list) {
+  const total = new Map();
+  for (const [hash, stack, quality] of list) {
+    const key = `${hash}|${quality}`;
+    const prev = total.get(key);
+    total.set(key, prev ? [hash, prev[1] + stack, quality] : [hash, stack, quality]);
+  }
+  return [...total.values()].sort((a, b) => b[1] - a[1]);
 }
 
 export function normalize(text) {
