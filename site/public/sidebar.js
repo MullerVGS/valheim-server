@@ -110,8 +110,35 @@ document.addEventListener('keydown', (e) => {
 });
 // Tela media: clicar fora (no mapa) fecha o trilho aberto por cima.
 document.addEventListener('pointerdown', (e) => {
-  if (root.classList.contains('rail-peek') && !sidebar.contains(e.target) && e.target !== opener) setPeek(false);
+  if (root.classList.contains('rail-peek') && !sidebar.contains(e.target) && !opener.contains(e.target)) setPeek(false);
 });
+
+// Celular: arrastar a gaveta para a esquerda fecha.
+let drag = null;
+sidebar.addEventListener('touchstart', (e) => {
+  if (!PHONE.matches || !root.classList.contains('rail-peek') || e.touches.length !== 1) return;
+  drag = { x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, horizontal: null };
+}, { passive: true });
+sidebar.addEventListener('touchmove', (e) => {
+  if (!drag) return;
+  const dx = e.touches[0].clientX - drag.x;
+  const dy = e.touches[0].clientY - drag.y;
+  if (drag.horizontal === null && Math.hypot(dx, dy) > 8) drag.horizontal = Math.abs(dx) > Math.abs(dy);
+  if (!drag.horizontal) return;
+  drag.dx = Math.min(0, dx);
+  sidebar.classList.add('dragging');
+  sidebar.style.transform = `translateX(${drag.dx}px)`;
+}, { passive: true });
+const endDrag = () => {
+  if (!drag) return;
+  const close = drag.horizontal && drag.dx < -sidebar.offsetWidth * 0.3;
+  sidebar.classList.remove('dragging');
+  sidebar.style.transform = '';
+  drag = null;
+  if (close) setPeek(false);
+};
+sidebar.addEventListener('touchend', endDrag);
+sidebar.addEventListener('touchcancel', endDrag);
 for (const mq of [WIDE, PHONE]) mq.addEventListener('change', () => { root.classList.remove('rail-peek'); sync(); });
 sync();
 // Sem transicao no primeiro quadro, para a barra nao "abrir" a cada pagina.
