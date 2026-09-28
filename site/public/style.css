@@ -1052,7 +1052,7 @@ body.page { min-height: 100vh; background: radial-gradient(ellipse at 50% -10%, 
 
 /* ---------- barra lateral (sidebar.js) ---------- */
 /* --rail-w e o espaco que a barra ocupa; o resto da tela anda para o lado. */
-html.has-rail { --rail-w: 68px; --rail-open: 244px; }
+html.has-rail { --rail-w: calc(68px + env(safe-area-inset-left)); --rail-open: calc(244px + env(safe-area-inset-left)); }
 @media (min-width: 1001px) { html.has-rail.rail-pinned { --rail-w: var(--rail-open); } }
 @media (max-width: 720px) { html.has-rail { --rail-w: 0px; } }
 
@@ -1066,6 +1066,11 @@ html.has-rail { --rail-w: 68px; --rail-open: 244px; }
 .has-rail body.page { padding-left: var(--rail-w); }
 @media (max-width: 1000px) and (min-width: 721px) {
   .has-rail .searchbar { left: auto; width: min(360px, calc(100vw - 340px - var(--rail-w))); }
+  .has-rail .timeline-dock { left: calc(var(--rail-w) + 16px); right: 92px; width: auto; max-width: 520px; margin: 0 auto; transform: none; }
+}
+/* Tela baixa (celular deitado): escala e coordenadas sobem para cima da linha do tempo. */
+@media (min-width: 721px) and (max-height: 520px) {
+  .has-rail .hud { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 62px); }
 }
 .rail-ready #stage, .rail-ready .brand, .rail-ready .hud, .rail-ready .searchbar, .rail-ready .timeline-dock, .rail-ready body.page {
   transition: left 0.22s ease, width 0.22s ease, padding-left 0.22s ease;
@@ -1080,7 +1085,7 @@ html.has-rail { --rail-w: 68px; --rail-open: 244px; }
   width: var(--rail-w);
   display: flex;
   flex-direction: column;
-  padding: max(14px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
+  padding: max(14px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom)) env(safe-area-inset-left);
   background:
     linear-gradient(90deg, transparent calc(100% - 1px), rgba(242, 163, 58, 0.18) 100%),
     repeating-linear-gradient(180deg, rgba(255, 220, 170, 0.018) 0 2px, transparent 2px 7px),
@@ -1247,7 +1252,7 @@ html:not(.rail-pinned):not(.rail-peek) .side-title::before { opacity: 1; }
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .side-link.soon::after { content: attr(data-tip) ' · em breve'; }
-@media (min-width: 721px) {
+@media (min-width: 721px) and (hover: hover) {
   html:not(.rail-peek) .side-link:is(:hover, :focus-visible)::after { opacity: 1; transform: none; }
   html.rail-pinned:not(.rail-peek) .side-link::after { display: none; }
 }
@@ -1259,8 +1264,12 @@ html:not(.rail-pinned):not(.rail-peek) .side-title::before { opacity: 1; }
 
 /* Celular: gaveta que sai da esquerda, com o botao de menu no canto. */
 @media (max-width: 720px) {
-  .sidebar { width: min(280px, 84vw); transform: translateX(-100%); box-shadow: none; }
-  .rail-peek .sidebar { transform: none; box-shadow: 16px 0 50px rgba(0, 0, 0, 0.7); }
+  /* Fechada: fora da tela e fora do Tab; visibility volta so depois de deslizar. */
+  .sidebar { width: min(280px, 84vw); transform: translateX(-100%); box-shadow: none; visibility: hidden; touch-action: pan-y; }
+  .rail-ready .sidebar { transition: transform 0.22s ease, box-shadow 0.22s ease, visibility 0s linear 0.22s; }
+  .rail-peek .sidebar { transform: none; box-shadow: 16px 0 50px rgba(0, 0, 0, 0.7); visibility: visible; transition-delay: 0s; }
+  .sidebar.dragging { transition: none !important; }
+  html.rail-peek.page-root, html.rail-peek.page-root body { overflow: hidden; }
   .side-scrim {
     display: block;
     position: fixed;
@@ -1300,6 +1309,25 @@ html:not(.rail-pinned):not(.rail-peek) .side-title::before { opacity: 1; }
   .sidebar .side-title { color: var(--ink-soft) !important; }
   .sidebar .side-title::before { opacity: 0 !important; }
   .side-link::after { display: none; }
-  .has-rail .brand { left: 62px; }
+  .has-rail .brand { left: 62px; max-width: calc(100vw - 74px); }
+  .has-rail .brand h1 { flex: none; }
   .has-rail .topbar { padding-left: 64px; }
+  /* Nas paginas o botao fica no topo e rola junto, para nao cobrir o texto. */
+  .page-root .side-opener { position: absolute; }
+  /* Tela estreita: o status encolhe com reticencias em vez de quebrar linha. */
+  .has-rail .brand .status { min-width: 0; max-width: 100%; white-space: nowrap; }
+  .has-rail #status-text { overflow: hidden; text-overflow: ellipsis; }
+}
+@media (max-width: 380px) {
+  .has-rail .brand h1 { font-size: 25px; }
+  .has-rail .brand { gap: 8px; }
+}
+
+/* Celular estreito: os atalhos de camadas encolhem para caber na largura da busca, sem passar por baixo das ferramentas. */
+@media (max-width: 400px) {
+  .quickbar { gap: 1px; padding: 3px; max-width: 100%; }
+  .quickbar button { width: 30px; height: 30px; }
+  .quickbar img, .pin-icon { width: 18px; height: 18px; }
+  .quickbar .swatch { width: 16px; height: 16px; }
+  .quick-sep { margin: 0 2px; }
 }
