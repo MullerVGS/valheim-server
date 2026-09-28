@@ -2,7 +2,8 @@
 """Extrai da instalacao do jogo as pecas que abrem area de base (EffectArea com PlayerBase) e o raio dela.
 
 Nenhum spawn natural nasce dentro dessa area (SpawnSystem.IsSpawnPointGood). O raio e o do collider
-de gatilho no mesmo GameObject do EffectArea (esfera ou capsula de pe), na escala do prefab.
+no mesmo GameObject do EffectArea (esfera ou capsula de pe; o jogo acha a area por OverlapSphere, com
+ou sem trigger), na escala do prefab. Escala zero (piece_EternalPyre) nao abre area.
 Sai em base-areas.json (prefab -> raio em metros), que o site le para desenhar onde nao nasce monstro.
 
     python3 tools/extract_base_areas.py --game "/path/to/Valheim" --out base-areas.json
@@ -53,7 +54,7 @@ def areas(go, scale, script):
         kind = c.object_reader.type.name
         if kind == "Transform":
             transform = c
-        elif kind in ("SphereCollider", "CapsuleCollider") and c.m_IsTrigger:
+        elif kind in ("SphereCollider", "CapsuleCollider"):
             collider = c
         elif kind == "MonoBehaviour":
             raw = c.object_reader.get_raw_data()
@@ -63,7 +64,7 @@ def areas(go, scale, script):
     if transform is None:
         return
     scale = scale * scale_xz(transform)
-    if found and collider is not None:
+    if found and collider is not None and collider.m_Radius * scale > 0:
         yield go.m_Name, round(collider.m_Radius * scale, 2)
     for child in transform.m_Children:
         yield from areas(child.read().m_GameObject.read(), scale, script)

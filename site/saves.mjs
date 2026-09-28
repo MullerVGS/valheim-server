@@ -280,7 +280,8 @@ export function parseInventory(buf) {
 // com inventario), placas e donos (camas e lapides).
 // Com `lean`, so as pecas com criador entram em candidates, e so com posicao e criador: e o que a
 // contagem por construtor precisa, sem segurar 100 mil ZDOs inteiros na memoria.
-export function readWorld(files, catalog, { lean = false } = {}) {
+// `baseAreas` (hash do prefab -> raio) junta em `bases` as pecas que abrem area de base.
+export function readWorld(files, catalog, { lean = false, baseAreas = null } = {}) {
   const explored = new Uint8Array(MAP_SIZE * MAP_SIZE);
   const pins = [];
   const seen = new Set();
@@ -288,6 +289,7 @@ export function readWorld(files, catalog, { lean = false } = {}) {
   const containers = [];
   const signs = [];
   const owners = [];
+  const bases = [];
   let tables = 0;
   for (const name of currentChunks(files)) {
     const buf = files.get(name);
@@ -322,12 +324,14 @@ export function readWorld(files, catalog, { lean = false } = {}) {
       } else if (zdo.ownerName && zdo.owner) {
         owners.push({ x: zdo.x, y: zdo.y, z: zdo.z, prefab: zdo.prefab, owner: zdo.owner, name: zdo.ownerName });
       }
+      const radius = baseAreas?.get(zdo.prefab);
+      if (radius) bases.push({ x: zdo.x, z: zdo.z, r: radius, prefab: zdo.prefab });
       if (!catalog?.has(zdo.prefab)) continue;
       if (!lean) candidates.push(zdo);
       else if (zdo.creator) candidates.push({ x: zdo.x, z: zdo.z, creator: zdo.creator, creatorIndex: zdo.creatorIndex });
     }
   }
-  return { explored, pins, candidates, tables, containers, signs, owners };
+  return { explored, pins, candidates, tables, containers, signs, owners, bases };
 }
 
 // Catalogo do plugin (pieces-catalog.bin): hash -> forma.

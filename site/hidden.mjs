@@ -262,6 +262,7 @@ export function filterWorld(world, v) {
     ...world,
     containers: world.containers.filter((c) => !v.gone('chest', c.x, c.z)),
     beds: world.beds.filter((b) => !v.gone('bed', b.x, b.z)),
+    baseAreas: world.baseAreas.filter(([x, z]) => !v.inArea(x, z)),
     builders: {
       names: world.builders.names,
       cells: world.builders.cells.filter(([cx, cz]) => !v.inArea((cx + 0.5) * cell, (cz + 0.5) * cell)),
