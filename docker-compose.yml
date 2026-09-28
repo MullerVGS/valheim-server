@@ -148,6 +148,8 @@ services:
       BACKUPS_DIR: /config/backups
       ARCHIVE_DIR: /app/archive
       WORLD_NAME: ${WORLD_NAME}
+      # Editor de placas: o mesmo catalogo do plugin (e o custom.txt ao lado), relido quando muda.
+      SIGNS_CATALOG: ${VALHEIM_SIGN_ICONS_CATALOG:-}
     volumes:
       - config:/config:ro
       - ./site/data:/app/data:ro

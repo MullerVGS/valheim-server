@@ -12,6 +12,7 @@ import { Archive } from './archive.mjs';
 import { cookieHeader, filterPieces, filterPins, filterState, filterTrails, filterWorld, Hidden, readCookie } from './hidden.mjs';
 import { MapData, maskTerrain } from './terrain.mjs';
 import { LiveWorld } from './world.mjs';
+import { createSigns } from './signs.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -27,6 +28,8 @@ const BACKUPS_DIR = process.env.BACKUPS_DIR || null;
 const ARCHIVE_DIR = process.env.ARCHIVE_DIR || null;
 const WORLD = process.env.WORLD_NAME || '';
 const ARCHIVE_EVERY_MS = 3600000;
+// Catalogo de icones das placas, o mesmo do plugin; o custom.txt (artes) fica ao lado.
+const SIGNS_CATALOG = process.env.SIGNS_CATALOG || null;
 // Escondidos: o unico estado que o site grava fora do historico.
 const HIDDEN_FILE = process.env.HIDDEN_FILE || (ARCHIVE_DIR ? join(ARCHIVE_DIR, 'hidden.json') : null);
 
@@ -343,10 +346,10 @@ function sendJson(res, value, status = 200) {
 }
 
 // `personal`: a resposta depende do cookie (escondidos); nenhum cache no caminho pode guardar.
-function sendPacked(req, res, packed, personal = false) {
+function sendPacked(req, res, packed, personal = false, type = 'application/octet-stream') {
   if (!packed) return notFound(res);
   const headers = {
-    'Content-Type': 'application/octet-stream',
+    'Content-Type': type,
     'Content-Encoding': 'gzip',
     'Cache-Control': personal ? 'private, no-cache' : 'no-cache',
     ETag: packed.etag,
@@ -427,6 +430,7 @@ async function hiddenApi(req, res, url, viewer) {
   return notFound(res);
 }
 
+const signs = createSigns(SIGNS_CATALOG, join(PUBLIC, 'game', 'items.json'));
 const state = cached(STATE_TTL_MS, buildState);
 const history = cached(HISTORY_TTL_MS, buildHistory);
 const players = cached(HISTORY_TTL_MS, buildPlayers);
@@ -476,12 +480,37 @@ async function sendPage(res, page) {
     v[name] = createHash('sha1').update(await readFile(join(PUBLIC, name))).digest('hex').slice(0, 10);
   }
   const imports = Object.fromEntries(Object.keys(v).filter((n) => n.endsWith('.js')).map((n) => [`./${n}`, `./${n}?v=${v[n]}`]));
+  let first = true;
   html = html
     .replace(/href="([\w-]+\.css)"/g, (m, n) => (v[n] ? `href="${n}?v=${v[n]}"` : m))
-    .replace(/<script type="module" src="([\w-]+\.js)"><\/script>/,
-      (m, n) => `<script type="importmap">${JSON.stringify({ imports })}</script>\n  <script type="module" src="${n}?v=${v[n]}"></script>`);
+    .replace(/<script type="module" src="([\w-]+\.js)"><\/script>/g, (m, n) => {
+      const tag = `<script type="module" src="${n}?v=${v[n]}"></script>`;
+      if (!first) return tag;
+      first = false;
+      return `<script type="importmap">${JSON.stringify({ imports })}</script>\n  ${tag}`;
+    });
   res.writeHead(200, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-cache' });
   res.end(html);
+}
+
+// Placas: indice e desenhos levam a versao do catalogo no endereco; com a versao certa, o navegador
+// guarda para sempre, e catalogo novo muda o endereco.
+async function signsApi(req, res, url) {
+  const cat = await signs.current();
+  if (!cat) return sendJson(res, { error: 'sem catalogo' }, 404);
+  const fresh = url.searchParams.get('v') === cat.version;
+  const cache = fresh ? 'public, max-age=31536000, immutable' : 'no-cache';
+  if (url.pathname === '/api/signs') return sendPacked(req, res, cat.index, false, 'application/json; charset=utf-8');
+  if (url.pathname === '/api/signs/atlas.png') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': cache, ETag: cat.atlas.etag, 'Content-Length': cat.atlas.body.length });
+    return res.end(cat.atlas.body);
+  }
+  const id = url.pathname.match(/^\/api\/signs\/entry\/([a-z0-9]{1,80})$/)?.[1];
+  const packed = id && signs.entry(cat, id);
+  if (!packed) return notFound(res);
+  if (!fresh) return sendPacked(req, res, packed, false, 'application/json; charset=utf-8');
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': cache, 'Content-Length': packed.gz.length });
+  res.end(packed.gz);
 }
 
 const sendText = (res, body) => {
@@ -558,6 +587,8 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/' || url.pathname === '/index.html') return await sendPage(res, 'index.html');
     if (url.pathname.startsWith('/jogador/')) return await sendPage(res, 'player.html');
     if (url.pathname.startsWith('/base/')) return await sendPage(res, 'base.html');
+    if (url.pathname === '/placas') return await sendPage(res, 'placas.html');
+    if (url.pathname.startsWith('/api/signs')) return await signsApi(req, res, url);
     const rel = decodeURIComponent(url.pathname.slice(1));
     const path = inside(PUBLIC, rel);
     if (!path) return notFound(res);
