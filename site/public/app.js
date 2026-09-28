@@ -47,6 +47,7 @@ const mapView = new MapView({
   overlay: $('overlay'),
   view: { ...HOME },
   icons: ['fire', 'house', 'hammer', 'pin', 'portal', 'bed', 'checked', 'player_32', 'boss', 'death'],
+  animate: true,
   onDraw: drawOverlay,
   onHover: hover,
   onClick: click,
