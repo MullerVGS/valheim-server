@@ -35,8 +35,15 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   0 madeira, 1 madeira nobre, 2 madeira de Yggdrasil, 3 pedra, 4 mármore, 5 grausten, 6 ferro,
   7 antigo, 8 gelo, 9 móvel/estação, 10 plantação, 11 barco. 404 enquanto o plugin não gravou.
 - `GET /api/state`, `GET /api/history`: jogadores, marcações, portais, camas, mesas e métricas.
-- `GET /api/world`: baús (`items` = `[hash do prefab, quantidade, qualidade]`), camas e a contagem de peças por
-  construtor numa grade de `cell` m (`[cx, cz, construtor, peças]`), do save ao vivo.
+- `GET /api/world`: baús (`items` = `[hash do prefab, quantidade, qualidade]`), camas, a contagem de peças por
+  construtor numa grade de `cell` m (`[cx, cz, construtor, peças]`) e as áreas de base (`baseAreas` =
+  `[x, z, raio, prefab]`), do save ao vivo.
+
+## Sem spawn (área de base)
+
+Camada "Sem spawn": a união dos círculos das peças que abrem `EffectArea` do tipo `PlayerBase`, onde nenhum spawn
+natural nasce (raide e spawner fixo, como ninho, ignoram). `base-areas.json` (prefab → raio) sai da instalação do
+jogo com `tools/extract_base_areas.py`; refaça depois de update que traga peça nova.
 - `GET /api/players`: todo jogador que o Victoria viu em 180 dias (primeira/última vez, minutos em 7 dias).
   `GET /api/player?name=`: minutos online por hora (30 dias) e total. `GET /api/trails?hours=1|6|24|72|168[&name=]`:
   posição no tempo (`[t, x, z]`), passo de 10 s a 5 min conforme a janela. Nome só se o Victoria já conhece.

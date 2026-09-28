@@ -18,7 +18,7 @@ const PLAY_STEP_MS = 1400;
 // Recorte do par no cartao do portal: tamanho em px CSS e zoom.
 const PAIR_VIEW = { width: 272, height: 150, metersPerPixel: 1.2 };
 
-const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false };
+const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false, safe: false };
 const HOME = { x: -44, z: -68, metersPerPixel: 3.2 };
 // Camadas e janela dos rastros ficam no navegador de quem olha.
 const PREFS_KEY = 'jahmaica.map';
@@ -72,7 +72,7 @@ function hitAt(sx, sy) {
   const icon = [...hits].reverse().find((h) => Math.abs(h.sx - sx) <= Math.max(h.r, 14) && Math.abs(h.sy - sy) <= Math.max(h.r, 14));
   if (icon) return icon;
   const [wx, wz] = mapView.toWorld(sx, sy);
-  return pieceHit(wx, wz);
+  return pieceHit(wx, wz) ?? baseAreaHit(wx, wz);
 }
 
 // Construcao sob o ponteiro: a base a que ela pertence.
@@ -439,6 +439,94 @@ function hiddenBadge(ctx, sx, sy, r) {
 }
 
 // Base que eu escondi: area hachurada com contorno tracejado e a etiqueta "escondida".
+// ---------- area de base: onde nao nasce monstro ----------
+
+// Pecas que abrem area de base (base-areas.json do servidor) em nome do jogo.
+const BASE_AREA_NAMES = {
+  piece_workbench: 'Bancada', forge: 'Forja', piece_stonecutter: 'Cortador de pedra', piece_artisanstation: 'Mesa de artesão',
+  blackforge: 'Forja negra', piece_magetable: 'Mesa galdr', piece_FrostFoundry: 'Fundição de gelo', piece_FrostKiln: 'Forno de gelo',
+  UpgradeStation: 'Estação de melhoria', fire_pit: 'Fogueira', fire_pit_iron: 'Fogueira de ferro', hearth: 'Lareira',
+  bonfire: 'Fogueira grande', prop_bonfire: 'Fogueira', BogWitch_Fire_Pit: 'Fogueira da Bruxa', fire_pit_haldor: 'Fogueira do Haldor',
+  fire_pit_hildir: 'Fogueira da Hildir', Morkhalla_firepit: 'Fogueira', bed: 'Cama', piece_bed02: 'Cama de dragão',
+  ashwood_bed: 'Cama de freixo', portal_wood: 'Portal', portal_stone: 'Portal de pedra', portal: 'Portal', piece_groundtorch: 'Tocha de chão',
+  piece_groundtorch_wood: 'Tocha de chão', piece_groundtorch_blue: 'Tocha azul', piece_groundtorch_green: 'Tocha verde',
+  piece_groundtorch_mist: 'Tocha de Mistlands', piece_walltorch: 'Tocha de parede', piece_brazierfloor01: 'Braseiro',
+  piece_brazierfloor02: 'Braseiro', piece_brazierceiling01: 'Braseiro suspenso', Candle_resin: 'Vela de resina',
+  piece_hoodedlantern: 'Lanterna com capuz', piece_jackoturnip: 'Nabo-lanterna', piece_Lavalantern: 'Lanterna de lava',
+  piece_dvergr_lantern: 'Lanterna dvergr', piece_dvergr_lantern_pole: 'Poste de lanterna dvergr', piece_snowlantern: 'Lanterna de neve',
+  piece_wisplure: 'Farol de wisp', guard_stone: 'Pedra-guarda', dverger_guardstone: 'Pedra-guarda dvergr', piece_shieldgenerator: 'Gerador de escudo',
+  charred_shieldgenerator: 'Gerador de escudo carbonizado', piece_turret: 'Balista', smelter: 'Fornalha', blastfurnace: 'Alto-forno',
+  charcoal_kiln: 'Forno de carvão', eitrrefinery: 'Refinaria de eitr', windmill: 'Moinho', piece_spinningwheel: 'Roca',
+  piece_oven: 'Forno de pedra', fermenter: 'Fermentador', piece_sapcollector: 'Coletor de seiva', incinerator: 'Obliterador',
+};
+const baseAreaName = (prefab) => BASE_AREA_NAMES[prefab] ?? prefab;
+const BASE_AREA_FILL = 'rgba(255, 214, 120, 0.2)';
+const BASE_AREA_INK = 'rgba(58, 36, 16, 0.85)';
+let baseAreaCanvas = null;
+
+// Uniao dos circulos: preenchimento unico (sem escurecer onde sobrepoe) e so a borda de fora.
+function drawBaseAreas(ctx, mv) {
+  if (!layers.safe || day || !world?.baseAreas?.length) return;
+  const mpp = mv.view.metersPerPixel;
+  const shown = [];
+  for (const [x, z, r] of world.baseAreas) {
+    const [sx, sy] = mv.toScreen(x, z);
+    const rp = r / mpp;
+    if (sx + rp < 0 || sy + rp < 0 || sx - rp > mv.width || sy - rp > mv.height) continue;
+    shown.push([sx, sy, rp]);
+  }
+  if (!shown.length) return;
+  const c = (baseAreaCanvas ??= document.createElement('canvas'));
+  c.width = ctx.canvas.width;
+  c.height = ctx.canvas.height;
+  const a = c.getContext('2d');
+  const dpr = mv.view.pixelRatio;
+  a.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const union = (grow) => {
+    a.beginPath();
+    for (const [sx, sy, rp] of shown) {
+      const r = Math.max(rp + grow, 0);
+      a.moveTo(sx + r, sy);
+      a.arc(sx, sy, r, 0, Math.PI * 2);
+    }
+  };
+  const edge = mpp > 6 ? 1 : 1.5;
+  a.lineWidth = edge * 2;
+  a.strokeStyle = BASE_AREA_INK;
+  union(0);
+  a.stroke();
+  a.globalCompositeOperation = 'destination-out';
+  union(-edge);
+  a.fill();
+  a.globalCompositeOperation = 'destination-over';
+  a.fillStyle = BASE_AREA_FILL;
+  union(0);
+  a.fill();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.shadowBlur = 0;
+  ctx.drawImage(c, 0, 0);
+  ctx.restore();
+}
+
+// Ponteiro dentro da area: o que a abre ali.
+function baseAreaHit(wx, wz) {
+  if (!layers.safe || day || !world?.baseAreas) return null;
+  const here = world.baseAreas.filter(([x, z, r]) => (x - wx) ** 2 + (z - wz) ** 2 <= r * r);
+  if (!here.length) return null;
+  const count = new Map();
+  for (const [, , r, prefab] of here) {
+    const key = `${baseAreaName(prefab)} (${r} m)`;
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  const by = [...count].sort((p, q) => q[1] - p[1]).map(([k, n]) => (n > 1 ? `${n}× ${k}` : k));
+  return {
+    title: 'Sem spawn de monstros',
+    lines: [by.slice(0, 4).join(' · ') + (by.length > 4 ? ` · +${by.length - 4}` : ''), 'raide e ninho ainda vêm'],
+    anchor: [wx, wz],
+  };
+}
+
 function drawHiddenAreas(ctx, mv) {
   for (const h of myHides()) {
     if (h.kind !== 'base') continue;
@@ -515,6 +603,7 @@ function drawOverlay(ctx, mv) {
     for (const p of trailData.players) drawTrail(ctx, p.points, trailData.step, now);
   }
 
+  drawBaseAreas(ctx, mv);
   drawHiddenAreas(ctx, mv);
 
   ctx.shadowColor = 'rgba(0,0,0,0.8)';

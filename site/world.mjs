@@ -12,6 +12,11 @@ const PIXEL = 12;
 // Grade da contagem de pecas por construtor, em metros.
 const BUILDER_CELL = 8;
 const SIGN_REACH = 2.5;
+// Pecas que abrem area de base (nenhum spawn natural nasce dentro): prefab -> raio, de tools/extract_base_areas.py.
+const BASE_AREAS = new Map(
+  Object.entries(JSON.parse(readFileSync(new URL('./base-areas.json', import.meta.url), 'utf8')))
+    .map(([prefab, r]) => [stableHash(prefab), { prefab, r }]),
+);
 
 const KINDS = new Map(
   [
@@ -93,7 +98,8 @@ export class LiveWorld {
         }
       },
     };
-    const world = readWorld(files, catalog, { lean: true });
+    const radius = new Map([...BASE_AREAS].map(([hash, a]) => [hash, a.r]));
+    const world = readWorld(files, catalog, { lean: true, baseAreas: radius });
     const fwl = names.find((n) => n === `_main.${last.n}.fwl2`) ?? names.find((n) => n.endsWith('.fwl2') || n.endsWith('.fwl'));
     const history = fwl ? readPlayerHistory(await readFile(join(this.saveDir, fwl))) : [];
     const value = this.build(world, history, await playersTsv(this.mapDir), last.time);
@@ -101,7 +107,7 @@ export class LiveWorld {
     this.value = value;
     this.json = { gz: body, etag: `"w-${createHash('sha1').update(body).digest('hex').slice(0, 16)}"` };
     this.marker = last.key;
-    console.log(`mundo: ${value.containers.length} baus, ${value.beds.length} camas, ${value.builders.names.length} construtores ` +
+    console.log(`mundo: ${value.containers.length} baus, ${value.beds.length} camas, ${value.baseAreas.length} areas de base, ${value.builders.names.length} construtores ` +
       `(${(body.length / 1024).toFixed(0)} KiB) em ${Math.round(performance.now() - t0)} ms`);
   }
 
@@ -176,11 +182,15 @@ export class LiveWorld {
     }
     const beds = world.owners.filter((o) => seen(o.x, o.z)).map((o) => ({ x: round(o.x), z: round(o.z), name: o.name }));
 
+    // Fonte de area de base: centro, raio e prefab. So se o centro esta no explorado.
+    const baseAreas = world.bases.filter((b) => seen(b.x, b.z)).map((b) => [round(b.x), round(b.z), b.r, BASE_AREAS.get(b.prefab).prefab]);
+
     return {
       savedAt,
       cell: BUILDER_CELL,
       containers,
       beds,
+      baseAreas,
       builders: { names, cells: [...cells].map(([k, n]) => [...k.split(',').map(Number), n]) },
     };
   }
