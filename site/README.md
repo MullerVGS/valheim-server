@@ -9,8 +9,8 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   sol, chão pisado sem árvores em volta e nuvens ralas sobre as bases. Precisa de `EXT_color_buffer_float`;
   sem ele o mapa abre sem construções.
 - `mapview.js`: o mapa num canvas (renderer, camada 2D, arrastar/zoom/pinça/clique), usado pelo mapa principal e
-  pelas páginas. Estático: água, névoa e nuvens paradas, e só desenha quando a vista ou os dados mudam;
-  ícones e baús viram imagens com a sombra pronta (`sprite`), sem desfoque a cada quadro. `common.js`: nomes do jogo, itens, e as regras de base (agrupamento de peças que contém um ponto).
+  pelas páginas. Água, névoa e nuvens andam só no mapa principal e só com a janela em foco
+  (`animate`); fora disso o mapa só desenha quando a vista ou os dados mudam. Ícones e baús viram imagens com a sombra pronta (`sprite`), sem desfoque a cada quadro. `common.js`: nomes do jogo, itens, e as regras de base (agrupamento de peças que contém um ponto).
 - Páginas: `/jogador/<nome>` (`player.html`/`player.js`: rastro com volta no tempo, horas por dia e por hora,
   bases que ergueu, lápides, camas, marcações) e `/base/<x>,<z>` (`base.html`/`base.js`: construtores, materiais,
   crescimento dia a dia, estoque somado e cada baú). No mapa, clicar num jogador, base ou baú abre um cartão com
