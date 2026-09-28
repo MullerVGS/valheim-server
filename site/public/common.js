@@ -2,6 +2,7 @@
 // que dizem qual base e qual e quem construiu.
 import { KINDS } from './pieces.js';
 import { GAME } from './mapview.js';
+import { ready } from './hidden.js';
 
 // Heightmap.Biome (metrica do jogador) e indice do terrain.bin (tools/build_terrain.py).
 export const BIOME_NAMES = {
@@ -35,6 +36,8 @@ export function el(tag, props = {}, ...children) {
 }
 
 export async function getJSON(url) {
+  // O que o servidor manda depende de quem pede (escondidos): a identidade vem antes.
+  await ready;
   const res = await fetch(url, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.json();

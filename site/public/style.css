@@ -885,3 +885,119 @@ body.page { min-height: 100vh; background: radial-gradient(ellipse at 50% -10%, 
 @media (max-width: 720px) {
   .card.in-map { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; max-height: 70%; }
 }
+
+/* ---------- escondidos ---------- */
+.eye { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; }
+.eye svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(255, 220, 170, 0.06);
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.btn:hover, .btn:focus-visible { border-color: var(--accent); outline: none; }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn.danger { color: #1b0f06; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.btn.danger:hover, .btn.danger:focus-visible { background: #ffb95a; }
+.card-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(150, 112, 68, 0.25); }
+.hide-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.hide-btn:hover, .hide-btn:focus-visible { color: var(--ink); outline: none; text-decoration: underline; }
+.hidden-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  background: rgba(242, 163, 58, 0.1);
+  border: 1px dashed rgba(242, 163, 58, 0.6);
+  border-radius: 5px;
+}
+.hidden-note .eye { color: var(--accent); }
+.hidden-note small { color: var(--ink-soft); }
+.hidden-note .btn { grid-column: 1 / -1; justify-self: start; }
+
+.tool-count {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  color: #1b0f06;
+  background: var(--accent);
+  border-radius: 8px;
+}
+.pop-note { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); }
+.hidden-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.hidden-list li { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 4px 10px; padding: 7px 0; border-top: 1px solid rgba(150, 112, 68, 0.2); }
+.hidden-list li:first-child { border-top: 0; }
+.hidden-list img { width: 22px; height: 22px; object-fit: contain; opacity: 0.7; }
+.hidden-list .what { display: grid; min-width: 0; }
+.hidden-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hidden-list .meta { font-size: 12px; color: var(--ink-soft); }
+.hidden-list .acts { grid-column: 2; display: flex; gap: 6px; }
+.hidden-list .empty { display: block; color: var(--ink-soft); font-style: italic; }
+
+.hide-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 18px 20px 16px;
+  color: var(--ink);
+  background: rgba(24, 18, 13, 0.98);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font-family: var(--body);
+  font-size: 15px;
+}
+.hide-dialog::backdrop { background: rgba(8, 6, 4, 0.55); }
+.hide-dialog h2 { margin: 0 0 10px; font-family: var(--norse); font-size: 26px; font-weight: 400; line-height: 1.1; color: var(--accent); }
+.hide-dialog p { margin: 0 0 10px; line-height: 1.4; }
+.hide-dialog .keep { padding: 8px 10px; background: rgba(242, 163, 58, 0.1); border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0; }
+.hide-dialog .fine { font-size: 12.5px; color: var(--ink-soft); }
+.hide-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+.toast {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 70px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(24, 18, 13, 0.96);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.toast[hidden] { display: none; }
+.toast button { padding: 2px 4px; font: inherit; font-weight: 700; color: var(--accent); background: none; border: 0; cursor: pointer; }
+.toast button:hover { text-decoration: underline; }
+.hero-hide { margin-top: 10px; max-width: 420px; }
