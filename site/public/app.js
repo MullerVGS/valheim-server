@@ -5,7 +5,7 @@ import {
   baseCenter, containerTitle, dayMonth, duration, el, fmt, getJSON, inBox, itemGrid, itemIcon, itemName, loadItems,
   materials, normalize, PIN_ICONS, playerHref,
 } from './common.js';
-import { hideControl, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
+import { hiddenFor, hideIcon, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
 
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
@@ -204,11 +204,10 @@ function hiddenHere(kind, o) {
   return own?.id ?? myAreaAt(o.x, o.z)?.id ?? null;
 }
 
-// Pe do cartao: esconder, ou o aviso de escondido. No passado, so o aviso.
+// Olho no canto do cartao, ao lado do fechar. No passado, so se ja estiver escondido.
 function hideRow(spec) {
-  const hiddenId = spec.kind === 'player' ? myPlayerHide(spec.name)?.id : spec.kind === 'base' ? myAreaAt(spec.x, spec.z)?.id : hiddenHere(spec.kind, spec);
-  if (day && !hiddenId) return null;
-  return el('div', { class: 'card-foot' }, hideControl(spec, hiddenId ?? null));
+  if (day && !hiddenFor(spec)) return null;
+  return hideIcon(spec, { className: 'card-hide' });
 }
 
 function baseCard(g) {

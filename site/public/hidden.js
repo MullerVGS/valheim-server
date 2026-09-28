@@ -182,6 +182,41 @@ export async function unhide(id) {
   }
 }
 
+// Escondido deste navegador que cobre a coisa: ela mesma ou a base em volta.
+export function hiddenFor(spec) {
+  if (spec.kind === 'player') return myPlayerHide(spec.name)?.id ?? null;
+  if (spec.kind !== 'base') {
+    const own = mine.find((h) => h.kind === spec.kind && Math.abs(h.x - spec.x) <= 2 && Math.abs(h.z - spec.z) <= 2);
+    if (own) return own.id;
+  }
+  return myAreaAt(spec.x, spec.z)?.id ?? null;
+}
+
+// So o olho: riscado e apagado para esconder, aceso quando escondido (clique mostra de novo). O que faz
+// aparece ao passar o mouse. Acompanha sozinho quando os escondidos mudam.
+export function hideIcon(spec, { className = '' } = {}) {
+  const btn = node('button', { type: 'button', class: `hide-icon ${className}`.trim() });
+  const render = () => {
+    const id = hiddenFor(spec);
+    const h = id && myHide(id);
+    const inBase = h?.kind === 'base' && spec.kind !== 'base';
+    const tip = !id ? `Esconder ${kindName(spec.kind)}` : inBase ? `Na base escondida — mostrar a base` : 'Escondido, só você vê — mostrar de novo';
+    btn.classList.toggle('on', !!id);
+    btn.dataset.tip = tip;
+    btn.setAttribute('aria-label', tip);
+    btn.replaceChildren(icon(EYE_OFF));
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (id) unhide(id);
+      else hide(spec);
+    };
+  };
+  const follow = () => (btn.isConnected || !btn.dataset.tip ? render() : listeners.delete(follow));
+  render();
+  listeners.add(follow);
+  return btn;
+}
+
 // Linha de acao no pe do cartao: "Esconder" ou, se ja e meu, o aviso com "Mostrar de novo".
 export function hideControl(spec, hiddenId) {
   if (hiddenId) {

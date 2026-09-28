@@ -5,7 +5,7 @@ import {
   $, BASE_MARGIN, baseAt, baseName, biomeAt, buildersIn, columnChart, containerTitle, dayMonth,
   el, fmt, getJSON, inBox, itemGrid, itemName, loadItems, materials, normalize, PIN_ICONS, playerHref, shareBars,
 } from './common.js';
-import { hideControl, myAreaAt, onHiddenChange } from './hidden.js';
+import { hideControl, hideIcon, myAreaAt, onHiddenChange } from './hidden.js';
 
 const [cx, cz] = location.pathname.replace(/^\/base\//, '').split(',').map(Number);
 const sheet = $('sheet');
@@ -98,6 +98,7 @@ function showChest(c, mv, center) {
   const count = c.items.reduce((a, i) => a + i[1], 0);
   popup.replaceChildren(
     el('button', { class: 'card-close', type: 'button', 'aria-label': 'Fechar', text: '×', onclick: () => closeChest(mv) }),
+    hideIcon({ kind: 'chest', title: containerTitle(c), x: c.x, z: c.z }, { className: 'card-hide' }),
     el('header', {},
       el('h3', { text: containerTitle(c) }),
       el('p', { class: 'sub', text: `${c.label ? `${c.kind} · ` : ''}${c.owner ? `de ${c.owner}` : ''}` })),
@@ -235,7 +236,9 @@ async function main() {
                 el('h3', { text: containerTitle(c) }),
                 el('div', { class: 'meta' },
                   el('span', { text: `${c.label ? `${c.kind} · ` : ''}${c.owner ? `de ${c.owner}` : ''}` }),
-                  el('button', { type: 'button', text: 'no mapa', onclick: () => { mapBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); showChest(c, mapView, true); } })),
+                  el('span', { class: 'meta-acts' },
+                    el('button', { type: 'button', text: 'no mapa', onclick: () => { mapBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); showChest(c, mapView, true); } }),
+                    hideIcon({ kind: 'chest', title: containerTitle(c), x: c.x, z: c.z }))),
                 c.items.length ? itemGrid(items, c.items, { limit: 40 }) : el('p', { class: 'empty', text: 'Vazio.' })))))
       : block('Baús', el('p', { class: 'empty', text: 'Nenhum baú nesta base.' })),
     beds.length || portals.length
