@@ -57,6 +57,7 @@ export class LiveWorld {
     this.mapDir = mapDir;
     this.marker = null;
     this.json = null; // { gz, etag }
+    this.value = null;
   }
 
   // Ultimo save completo: o jogo grava _main.<n>.ok depois dos chunks.
@@ -97,6 +98,7 @@ export class LiveWorld {
     const history = fwl ? readPlayerHistory(await readFile(join(this.saveDir, fwl))) : [];
     const value = this.build(world, history, await playersTsv(this.mapDir), last.time);
     const body = gzipSync(JSON.stringify(value));
+    this.value = value;
     this.json = { gz: body, etag: `"w-${createHash('sha1').update(body).digest('hex').slice(0, 16)}"` };
     this.marker = last.key;
     console.log(`mundo: ${value.containers.length} baus, ${value.beds.length} camas, ${value.builders.names.length} construtores ` +

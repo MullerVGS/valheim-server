@@ -5,6 +5,7 @@ import {
   $, BASE_MARGIN, baseAt, baseName, biomeAt, buildersIn, columnChart, containerTitle, dayMonth,
   el, fmt, getJSON, inBox, itemGrid, itemName, loadItems, materials, normalize, PIN_ICONS, playerHref, shareBars,
 } from './common.js';
+import { hideControl, myAreaAt, onHiddenChange } from './hidden.js';
 
 const [cx, cz] = location.pathname.replace(/^\/base\//, '').split(',').map(Number);
 const sheet = $('sheet');
@@ -65,6 +66,7 @@ function drawOverlay(ctx, mv) {
     ctx.shadowBlur = 2;
   }
   for (const p of state?.players ?? []) {
+    if (p.x == null) continue;
     const [sx, sy] = mv.toScreen(p.x, p.z);
     mv.icon('player_32', sx, sy, 26);
     ctx.shadowBlur = 0;
@@ -196,12 +198,20 @@ async function main() {
   const biome = biomeAt(mapView.terrain, (g.minX + g.maxX) / 2, (g.minZ + g.maxZ) / 2);
   const growth = el('div', {}, el('p', { class: 'empty', text: 'Contando os dias…' }));
 
+  // Esconder a base daqui; quem escondeu segue vendo a pagina, com o aviso e o "mostrar de novo".
+  const hideBox = el('div', { class: 'hero-hide' });
+  const renderHide = () => hideBox.replaceChildren(hideControl(
+    { kind: 'base', title: name, x: (g.minX + g.maxX) / 2, z: (g.minZ + g.maxZ) / 2, box: [g.minX, g.minZ, g.maxX, g.maxZ] },
+    myAreaAt((g.minX + g.maxX) / 2, (g.minZ + g.maxZ) / 2)?.id ?? null));
+  renderHide();
+  onHiddenChange(renderHide);
   mapBox.parentElement.hidden = false;
   sheet.replaceChildren(
     el('section', { class: 'hero' },
       el('h1', { text: name }),
       el('p', {}, `${biome ?? ''}${biome ? ' · ' : ''}${Math.round((g.minX + g.maxX) / 2)}, ${Math.round((g.minZ + g.maxZ) / 2)} · ${w} × ${h} m`),
-      here.length ? el('p', { class: 'online' }, el('span', { class: 'dot' }), `Aqui agora: ${here.map((p) => p.name).join(', ')}`) : null),
+      here.length ? el('p', { class: 'online' }, el('span', { class: 'dot' }), `Aqui agora: ${here.map((p) => p.name).join(', ')}`) : null,
+      hideBox),
     el('div', { class: 'tiles' },
       tile('Peças', fmt.format(g.count)),
       tile('Baús', fmt.format(chests.length), `${fmt.format(stored)} itens guardados`),

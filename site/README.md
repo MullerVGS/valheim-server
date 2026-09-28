@@ -44,6 +44,26 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
 - `GET /api/days`: dias guardados (data, hora do save, km² explorados, construções, marcações);
   `GET /data/days/<AAAA-MM-DD>/terrain.bin`, `.../pieces.bin` e `GET /api/days/<AAAA-MM-DD>/pins`: o mapa daquele dia.
 
+## Escondidos
+
+Qualquer visitante pode esconder uma base, baú, portal, cama, marcação ou jogador (botão no pé do cartão, com
+confirmação). `hidden.mjs` tira aquilo de toda resposta para todo mundo, menos para quem escondeu, que continua
+vendo com a marca de escondido e é o único que pode mostrar de novo (botão "Escondidos" do mapa).
+
+- Quem é quem: cookie `jahmaica_id` (aleatório, HttpOnly, 400 dias). Sem ele, `POST /api/me` com a impressão
+  básica do navegador (`public/hidden.js`: UA, idioma, tela, fuso, canvas, WebGL) devolve o id antigo. Navegador
+  ou aparelho diferente não é reconhecido; dois navegadores idênticos seriam.
+- Base escondida = os agrupamentos de peças de agora que tocam a caixa guardada, +15 m: se a base cresce, a parte
+  nova some junto. Some tudo dentro dela (peças, baús, camas, portais, marcações, mesas, rastros), e quem estiver
+  lá aparece online sem posição. Portal de fora que aponta para dentro perde o par.
+- Jogador escondido: posição, rastros e página sem mapa; continua na lista de online.
+- Estado em `HIDDEN_FILE` (padrão `ARCHIVE_DIR/hidden.json`). Respostas por pessoa: `GET /api/pieces`,
+  `/api/days/<dia>/pieces` (sem extensão, `private`, `Vary: Cookie`); `/data/pieces.bin` e `.../pieces.bin`
+  (que a Cloudflare pode guardar) são a vista de quem não escondeu nada.
+- `GET /api/hidden` (os meus), `POST /api/hide` `{hide: {kind, title, x, z, box?, name?}}`, `POST /api/unhide`
+  `{id}`. Só JSON (`Content-Type`), cookie `SameSite=Lax`.
+- Tirar um escondido à mão: editar o JSON no host e reiniciar o site.
+
 ## Histórico
 
 O servidor apaga zip de backup com mais de `BACKUPS_MAX_AGE` dias. `archive.mjs` copia o último zip de cada dia

@@ -6,9 +6,10 @@ import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { Archive } from './archive.mjs';
+import { cookieHeader, filterPieces, filterPins, filterState, filterTrails, filterWorld, Hidden, readCookie } from './hidden.mjs';
 import { MapData, maskTerrain } from './terrain.mjs';
 import { LiveWorld } from './world.mjs';
 
@@ -26,6 +27,8 @@ const BACKUPS_DIR = process.env.BACKUPS_DIR || null;
 const ARCHIVE_DIR = process.env.ARCHIVE_DIR || null;
 const WORLD = process.env.WORLD_NAME || '';
 const ARCHIVE_EVERY_MS = 3600000;
+// Escondidos: o unico estado que o site grava fora do historico.
+const HIDDEN_FILE = process.env.HIDDEN_FILE || (ARCHIVE_DIR ? join(ARCHIVE_DIR, 'hidden.json') : null);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -226,11 +229,18 @@ const mapData = new MapData({ mapDir: MAP_DIR, dataDir: DATA, saveDir: SAVE_DIR 
 // Baus, camas e construtores do save ao vivo, para as paginas.
 const liveWorld = new LiveWorld({ saveDir: SAVE_DIR, mapDir: MAP_DIR });
 
+const hidden = new Hidden(HIDDEN_FILE);
+let hiddenPiecesEtag = null;
+
 async function refreshMap() {
   try {
     await mapData.refresh();
   } catch (err) {
     console.error('mapa:', err.message);
+  }
+  if ((mapData.pieces?.etag ?? null) !== hiddenPiecesEtag) {
+    hiddenPiecesEtag = mapData.pieces?.etag ?? null;
+    hidden.setPieces(mapData.pieces?.raw ?? null);
   }
   try {
     await liveWorld.refresh();
@@ -303,13 +313,16 @@ async function dayPieceXZ(date) {
   return dayPieces.get(date);
 }
 
-async function daysInArea(x0, z0, x1, z1) {
+async function daysInArea(v, x0, z0, x1, z1) {
   const out = [];
   for (const d of [...archive.days].reverse()) {
     const xz = await dayPieceXZ(d.date);
     if (!xz) continue;
     let count = 0;
-    for (let k = 0; k < xz.length; k += 2) if (xz[k] >= x0 && xz[k] <= x1 && xz[k + 1] >= z0 && xz[k + 1] <= z1) count++;
+    const hides = v.overlapsArea([x0, z0, x1, z1]);
+    for (let k = 0; k < xz.length; k += 2) {
+      if (xz[k] >= x0 && xz[k] <= x1 && xz[k + 1] >= z0 && xz[k + 1] <= z1 && !(hides && v.inArea(xz[k], xz[k + 1]))) count++;
+    }
     out.push({ date: d.date, pieces: count });
   }
   return out;
@@ -324,25 +337,94 @@ async function dayTerrainPacked(date) {
   return dayTerrain.get(date);
 }
 
-function sendJson(res, value) {
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+function sendJson(res, value, status = 200) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(value));
 }
 
-function sendPacked(req, res, packed) {
+// `personal`: a resposta depende do cookie (escondidos); nenhum cache no caminho pode guardar.
+function sendPacked(req, res, packed, personal = false) {
   if (!packed) return notFound(res);
   const headers = {
     'Content-Type': 'application/octet-stream',
     'Content-Encoding': 'gzip',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': personal ? 'private, no-cache' : 'no-cache',
     ETag: packed.etag,
   };
+  if (personal) headers.Vary = 'Cookie';
   if (req.headers['if-none-match'] === packed.etag) {
     res.writeHead(304, headers);
     return res.end();
   }
   res.writeHead(200, { ...headers, 'Content-Length': packed.gz.length });
   res.end(packed.gz);
+}
+
+// Variantes filtradas por quem pede (escondidos), guardadas pela chave do que foi tirado.
+const variants = new Map();
+function variant(key, make) {
+  if (!variants.has(key)) {
+    if (variants.size >= 32) variants.delete(variants.keys().next().value);
+    variants.set(key, make());
+  }
+  return variants.get(key);
+}
+
+function packJson(value) {
+  const gz = gzipSync(JSON.stringify(value));
+  return { gz, etag: `"h-${createHash('sha1').update(gz).digest('hex').slice(0, 16)}"` };
+}
+
+function packPieces(raw) {
+  const gz = gzipSync(raw, { level: 6 });
+  return { gz, etag: `"p-${createHash('sha1').update(gz).digest('hex').slice(0, 16)}"` };
+}
+
+// Construcoes (agora ou de um dia) sem as bases que os outros esconderam.
+function piecesFor(v, source, key) {
+  if (!source || !v.areas.length) return source && { gz: source.gz, etag: source.etag };
+  return variant(`pieces|${key}|${hidden.version}|${v.key}`, () => packPieces(filterPieces(source.raw ?? gunzipSync(source.gz), v)));
+}
+
+async function readBody(req, limit = 4096) {
+  let size = 0;
+  const chunks = [];
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw Object.assign(new Error('grande demais'), { status: 413 });
+    chunks.push(c);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+}
+
+const fingerprint = (body) => (typeof body.fp === 'string' && /^[a-f0-9]{64}$/.test(body.fp) ? body.fp : null);
+
+// POST /api/me, /api/hide, /api/unhide e GET /api/hidden. So JSON: formulario de outro site nao chega aqui.
+async function hiddenApi(req, res, url, viewer) {
+  if (url.pathname === '/api/hidden') return sendJson(res, viewer ? hidden.mine(viewer) : []);
+  if (req.method !== 'POST' || !(req.headers['content-type'] ?? '').startsWith('application/json')) {
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    return res.end('POST com JSON');
+  }
+  const body = await readBody(req);
+  const fp = fingerprint(body);
+  if (url.pathname === '/api/me') {
+    const me = hidden.identify(viewer, fp);
+    res.setHeader('Set-Cookie', cookieHeader(me.id, req));
+    return sendJson(res, { recovered: me.recovered, hides: hidden.mine(me.id) });
+  }
+  if (!viewer) return sendJson(res, { error: 'sem identidade' }, 401);
+  if (url.pathname === '/api/hide') {
+    try {
+      return sendJson(res, hidden.add(viewer, fp, req.headers['user-agent'], body.hide));
+    } catch (err) {
+      return sendJson(res, { error: err.message }, 400);
+    }
+  }
+  if (url.pathname === '/api/unhide') {
+    return hidden.remove(viewer, String(body.id ?? '')) ? sendJson(res, { ok: true }) : sendJson(res, { error: 'nao e seu' }, 404);
+  }
+  return notFound(res);
 }
 
 const state = cached(STATE_TTL_MS, buildState);
@@ -419,18 +501,26 @@ function inside(base, rel) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  // Quem pede, para os escondidos. As rotas .bin (que a Cloudflare pode guardar) usam a vista de ninguem.
+  const viewer = readCookie(req);
+  const v = hidden.view(viewer);
+  const anon = hidden.view(null);
   try {
-    if (url.pathname === '/api/state' || url.pathname === '/api/history') {
-      const body = await (url.pathname === '/api/state' ? state() : history());
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      return res.end(body);
+    if (['/api/me', '/api/hide', '/api/unhide', '/api/hidden'].includes(url.pathname)) return await hiddenApi(req, res, url, viewer);
+    if (url.pathname === '/api/state') {
+      const body = await state();
+      return v.empty ? sendText(res, body) : sendJson(res, filterState(JSON.parse(body), v));
     }
+    if (url.pathname === '/api/history') return sendText(res, await history());
     if (url.pathname === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       return res.end('ok');
     }
     if (url.pathname === '/api/days') return sendJson(res, archive ? archive.days : []);
-    if (url.pathname === '/api/world') return sendPacked(req, res, liveWorld.json);
+    if (url.pathname === '/api/world') {
+      if (v.empty || !liveWorld.value) return sendPacked(req, res, liveWorld.json, true);
+      return sendPacked(req, res, variant(`world|${liveWorld.json.etag}|${hidden.version}|${v.key}`, () => packJson(filterWorld(liveWorld.value, v))), true);
+    }
     if (url.pathname === '/api/players') return sendText(res, await players());
     if (url.pathname === '/api/player') {
       const name = url.searchParams.get('name');
@@ -442,24 +532,29 @@ const server = createServer(async (req, res) => {
       const step = TRAIL_STEPS[hours];
       const name = url.searchParams.get('name') || null;
       if (!step || (name && !(await knownPlayer(name)))) return notFound(res);
-      return sendText(res, await trail(`${hours}|${name ?? ''}`, hours * 3600, step, name));
+      if (name && v.players.has(name)) return sendJson(res, { step, players: [] });
+      const body = await trail(`${hours}|${name ?? ''}`, hours * 3600, step, name);
+      return v.empty ? sendText(res, body) : sendJson(res, filterTrails(JSON.parse(body), v));
     }
     if (url.pathname === '/api/days/area') {
       const box = ['x0', 'z0', 'x1', 'z1'].map((k) => Number(url.searchParams.get(k)));
       if (!archive || box.some((v) => !Number.isFinite(v))) return notFound(res);
-      return sendJson(res, await daysInArea(...box));
+      return sendJson(res, await daysInArea(v, ...box));
     }
-    const day = url.pathname.match(/^\/(?:api|data)\/days\/(\d{4}-\d{2}-\d{2})\/(pins|terrain\.bin|pieces\.bin)$/);
+    const day = url.pathname.match(/^\/(?:api|data)\/days\/(\d{4}-\d{2}-\d{2})\/(pins|terrain\.bin|pieces\.bin|pieces)$/);
     if (day) {
       const [, date, what] = day;
       if (!archive?.has(date)) return notFound(res);
-      if (what === 'pins') return sendJson(res, await dayPins(date));
+      if (what === 'pins') return sendJson(res, filterPins(await dayPins(date), v));
       if (what === 'terrain.bin') return sendPacked(req, res, await dayTerrainPacked(date));
       const gz = await archive.piecesGz(date);
-      return sendPacked(req, res, gz && { gz, etag: `"p-${date}-${gz.length}"` });
+      const source = gz && { gz, etag: `"p-${date}-${gz.length}"` };
+      // pieces (sem extensao) e por quem pede; pieces.bin e a vista de ninguem.
+      return what === 'pieces' ? sendPacked(req, res, piecesFor(v, source, date), true) : sendPacked(req, res, piecesFor(anon, source, date));
     }
     if (url.pathname === '/data/terrain.bin') return sendPacked(req, res, mapData.terrain);
-    if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, mapData.pieces);
+    if (url.pathname === '/data/pieces.bin') return sendPacked(req, res, piecesFor(anon, mapData.pieces, mapData.pieces?.etag));
+    if (url.pathname === '/api/pieces') return sendPacked(req, res, piecesFor(v, mapData.pieces, mapData.pieces?.etag), true);
     if (url.pathname === '/' || url.pathname === '/index.html') return await sendPage(res, 'index.html');
     if (url.pathname.startsWith('/jogador/')) return await sendPage(res, 'player.html');
     if (url.pathname.startsWith('/base/')) return await sendPage(res, 'base.html');
@@ -469,11 +564,14 @@ const server = createServer(async (req, res) => {
     return sendFile(req, res, path);
   } catch (err) {
     console.error(url.pathname, err.message);
+    if (err.status) return sendJson(res, { error: err.message }, err.status);
+    if (err instanceof SyntaxError) return sendJson(res, { error: 'json' }, 400);
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'upstream' }));
   }
 });
 
+await hidden.load();
 await refreshMap();
 setInterval(refreshMap, MAP_CHECK_MS).unref();
 if (archive) {

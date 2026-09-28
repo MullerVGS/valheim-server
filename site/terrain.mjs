@@ -104,7 +104,7 @@ export class MapData {
     this.dataDir = dataDir;
     this.saveDir = saveDir;
     this.terrain = null; // { gz, etag, pixels } recortado
-    this.pieces = null; // { gz, etag, count }
+    this.pieces = null; // { gz, etag, count, raw }
     this.full = null;
     this.fullSig = null;
     this.exploredSig = null;
@@ -158,7 +158,7 @@ export class MapData {
     if (piecesStat && sig(piecesStat) !== this.piecesSig) {
       const raw = await readFile(piecesPath);
       if (raw.toString('latin1', 0, 4) !== 'VPC1') throw new Error('pieces.bin: formato desconhecido');
-      this.pieces = { ...packed(raw), count: raw.readUInt32LE(4) };
+      this.pieces = { ...packed(raw), count: raw.readUInt32LE(4), raw };
       this.piecesSig = sig(piecesStat);
       console.log(`construcoes: ${this.pieces.count} pecas, ${(this.pieces.gz.length / 1024).toFixed(0)} KiB`);
     }

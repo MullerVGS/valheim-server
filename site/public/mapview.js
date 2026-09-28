@@ -2,6 +2,7 @@
 // pelo mapa principal e pelas paginas de base e de jogador; quem usa desenha a camada de cima em onDraw.
 import { MapRenderer, parseTerrain, sunDirection, WORLD_SIZE } from './mapgl.js';
 import { groupSettlements, parsePieces } from './pieces.js';
+import { ready } from './hidden.js';
 
 export const GAME = 'game';
 const MIN_MPP = 0.25; // zoom maximo do jogo: 0,015 do mapa na tela
@@ -243,6 +244,9 @@ export class MapView {
   // Terreno e construcoes de agora ou de um dia do historico, trocados no renderer ja montado.
   async loadWorld(date, r = this.renderer) {
     const base = date ? `data/days/${date}/` : 'data/';
+    // Construcoes pela api: dependem de quem pede (bases escondidas), entao nada de .bin em cache compartilhado.
+    const piecesUrl = date ? `api/days/${date}/pieces` : 'api/pieces';
+    await ready;
     const [terrainBuf, piecesBuf] = await Promise.all([
       // Sempre revalida: a Cloudflare manda o navegador guardar .bin por 4 h.
       fetch(base + 'terrain.bin', { cache: 'no-cache' }).then((res) => {
@@ -250,7 +254,7 @@ export class MapView {
         return res.arrayBuffer();
       }),
       // Sem construcoes o mapa abre do mesmo jeito.
-      fetch(base + 'pieces.bin', { cache: 'no-cache' })
+      fetch(piecesUrl, { cache: 'no-cache' })
         .then((res) => (res.ok ? res.arrayBuffer() : null))
         .catch(() => null),
     ]);

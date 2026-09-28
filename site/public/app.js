@@ -2,9 +2,10 @@ import { KINDS, pieceAt } from './pieces.js';
 import { MapView } from './mapview.js';
 import {
   $, ago, BASE_MARGIN, BASE_MIN_PIECES, baseAt, baseHref, baseName, BIOME_NAMES, buildersIn, columnChart,
-  containerTitle, dayMonth, duration, el, fmt, getJSON, inBox, itemGrid, itemIcon, itemName, loadItems,
+  baseCenter, containerTitle, dayMonth, duration, el, fmt, getJSON, inBox, itemGrid, itemIcon, itemName, loadItems,
   materials, normalize, PIN_ICONS, playerHref,
 } from './common.js';
+import { hideControl, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
 
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
@@ -91,7 +92,7 @@ function baseHit(g, here) {
     .map((m) => `${m.name} ${Math.round((m.count / g.count) * 100)}%`);
   return {
     title: baseName(g, pins, world),
-    lines: [g.count === 1 ? 'peça solta' : `${fmt.format(g.count)} peças`, mix.join(' · '), here ? `aqui: ${here}` : ''].filter(Boolean),
+    lines: [myAreaAt(...baseCenter(g)) ? 'escondida — só você vê' : '', g.count === 1 ? 'peça solta' : `${fmt.format(g.count)} peças`, mix.join(' · '), here ? `aqui: ${here}` : ''].filter(Boolean),
     anchor: [(g.minX + g.maxX) / 2, g.maxZ],
     card: () => baseCard(g),
   };
@@ -193,7 +194,21 @@ function playerCard(p) {
   return el('div', {},
     cardHead(p.name, 'online agora'),
     el('dl', { class: 'card-stats' }, rows.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: v })))),
-    cardLink(playerHref(p.name), 'Página do jogador'));
+    cardLink(playerHref(p.name), 'Página do jogador'),
+    hideRow({ kind: 'player', title: p.name, name: p.name }));
+}
+
+// Escondido por este navegador naquele lugar: a coisa em si ou a base em volta.
+function hiddenHere(kind, o) {
+  const own = myHides().find((h) => h.kind === kind && Math.abs(h.x - o.x) <= 2 && Math.abs(h.z - o.z) <= 2);
+  return own?.id ?? myAreaAt(o.x, o.z)?.id ?? null;
+}
+
+// Pe do cartao: esconder, ou o aviso de escondido. No passado, so o aviso.
+function hideRow(spec) {
+  const hiddenId = spec.kind === 'player' ? myPlayerHide(spec.name)?.id : spec.kind === 'base' ? myAreaAt(spec.x, spec.z)?.id : hiddenHere(spec.kind, spec);
+  if (day && !hiddenId) return null;
+  return el('div', { class: 'card-foot' }, hideControl(spec, hiddenId ?? null));
 }
 
 function baseCard(g) {
@@ -211,7 +226,24 @@ function baseCard(g) {
     cardHead(baseName(g, pins, world), `${Math.round(g.maxX - g.minX)} × ${Math.round(g.maxZ - g.minZ)} m`),
     el('dl', { class: 'card-stats' }, rows.map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: v })))),
     day ? el('p', { class: 'sub', text: `Como estava em ${day.slice(8, 10)}/${day.slice(5, 7)}.` }) : null,
-    cardLink(baseHref(g), 'Página da base'));
+    cardLink(baseHref(g), 'Página da base'),
+    hideRow({ kind: 'base', title: baseName(g, pins, world), x: baseCenter(g)[0], z: baseCenter(g)[1], box: [g.minX, g.minZ, g.maxX, g.maxZ] }));
+}
+
+function bedCard(b) {
+  return el('div', {},
+    cardHead('Cama', b.owner ? `de ${b.owner}` : null),
+    b.owner ? cardLink(playerHref(b.owner), 'Página do jogador') : null,
+    hideRow({ kind: 'bed', title: b.owner ? `Cama de ${b.owner}` : 'Cama', x: b.x, z: b.z }));
+}
+
+function pinCard(p) {
+  const g = mapView.settlements && baseAt(mapView.settlements, p.x, p.z, 15);
+  const base = g && g.count >= BASE_MIN_PIECES ? g : null;
+  return el('div', {},
+    cardHead(p.name || 'Marcação', [p.author ? `por ${p.author}` : '', p.checked ? 'riscada' : ''].filter(Boolean).join(' · ') || null),
+    base ? cardLink(baseHref(base), baseName(base, day ? dayPins : state?.pins, world)) : null,
+    hideRow({ kind: 'pin', title: p.name || 'Marcação', x: p.x, z: p.z }));
 }
 
 // ---------- portais ----------
@@ -272,7 +304,8 @@ function portalCard(p) {
   const pair = pairOf(p);
   const here = placeName(p.x, p.z);
   const head = cardHead(p.tag || 'Portal sem nome', here ? `em ${here}` : `${Math.round(p.x)}, ${Math.round(p.z)}`);
-  if (!pair) return el('div', {}, head, el('p', { class: 'sub', text: 'Sem par: nenhum outro portal com esse nome.' }));
+  const foot = hideRow({ kind: 'portal', title: p.tag || 'Portal sem nome', x: p.x, z: p.z });
+  if (!pair) return el('div', {}, head, el('p', { class: 'sub', text: 'Sem par: nenhum outro portal com esse nome.' }), foot);
   const there = placeName(pair.x, pair.z);
   const go = async () => {
     closeCard();
@@ -286,7 +319,8 @@ function portalCard(p) {
       el('span', { class: 'pair-caption' },
         el('span', { text: there ? `Par em ${there}` : `Par em ${Math.round(pair.x)}, ${Math.round(pair.z)}` }),
         el('span', { class: 'meta', text: distanceText(Math.hypot(pair.x - p.x, pair.z - p.z)) }))),
-    el('p', { class: 'sub', text: 'Clique no recorte para ir até o par.' }));
+    el('p', { class: 'sub', text: 'Clique no recorte para ir até o par.' }),
+    foot);
 }
 
 // Linha entre o portal e o par: tinta tracejada com fio claro por baixo, como as rotas do mapa.
@@ -319,7 +353,8 @@ function chestCard(c) {
     cardHead(containerTitle(c), c.tomb ? 'lápide' : `${c.kind}${c.owner ? ` · de ${c.owner}` : ''}`),
     c.items.length ? itemGrid(items, c.items, { limit: 24, px: 30 }) : el('p', { class: 'sub', text: 'Vazio.' }),
     c.items.length ? el('p', { class: 'sub', text: `${fmt.format(count)} itens` }) : null,
-    g && g.count >= BASE_MIN_PIECES ? cardLink(baseHref(g), baseName(g, state?.pins, world)) : null);
+    g && g.count >= BASE_MIN_PIECES ? cardLink(baseHref(g), baseName(g, state?.pins, world)) : null,
+    hideRow({ kind: 'chest', title: containerTitle(c), x: c.x, z: c.z }));
 }
 
 // ---------- camada de cima ----------
@@ -381,6 +416,88 @@ function drawChest(ctx, sx, sy, size, highlight) {
   ctx.fillRect(sx - 1.5, sy - h / 8 - 1, 3, 4);
 }
 
+// Olho riscado no canto de cima a direita do que so eu vejo.
+function hiddenBadge(ctx, sx, sy, r) {
+  const x = sx + r * 0.75;
+  const y = sy - r * 0.75;
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#2a1d12';
+  ctx.fill();
+  ctx.strokeStyle = '#f2a33a';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(x, y, 3.8, 2.2, 0, 0, Math.PI * 2);
+  ctx.moveTo(x - 4, y + 4);
+  ctx.lineTo(x + 4, y - 4);
+  ctx.strokeStyle = '#f4efe6';
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Base que eu escondi: area hachurada com contorno tracejado e a etiqueta "escondida".
+function drawHiddenAreas(ctx, mv) {
+  for (const h of myHides()) {
+    if (h.kind !== 'base') continue;
+    const [ax, ay] = mv.toScreen(h.box[0], h.box[3]);
+    const [bx, by] = mv.toScreen(h.box[2], h.box[1]);
+    const w = bx - ax;
+    const hh = by - ay;
+    if (bx < -40 || by < -40 || ax > mv.width + 40 || ay > mv.height + 40) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ax, ay, w, hh);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(30,20,12,0.28)';
+    ctx.fillRect(ax, ay, w, hh);
+    ctx.strokeStyle = 'rgba(40,24,10,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let d = -hh; d < w; d += 9) {
+      ctx.moveTo(ax + d, ay + hh);
+      ctx.lineTo(ax + d + hh, ay);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.setLineDash([7, 5]);
+    ctx.strokeStyle = '#f2a33a';
+    ctx.lineWidth = 1.6;
+    ctx.strokeRect(ax, ay, w, hh);
+    ctx.restore();
+    if (w > 60) {
+      ctx.save();
+      ctx.font = '600 12px "Averia Serif Libre", serif';
+      const text = 'escondida · só você vê';
+      const tw = ctx.measureText(text).width + 22;
+      const lx = Math.max(ax, Math.min(ax + w - tw, ax + 6));
+      const ly = Math.max(6, ay - 10);
+      ctx.fillStyle = 'rgba(24,18,13,0.9)';
+      ctx.beginPath();
+      ctx.roundRect(lx, ly, tw, 18, 9);
+      ctx.fill();
+      ctx.strokeStyle = '#f2a33a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#f4efe6';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillText(text, lx + 16, ly + 9.5);
+      ctx.beginPath();
+      ctx.ellipse(lx + 9, ly + 9, 3.5, 2, 0, 0, Math.PI * 2);
+      ctx.moveTo(lx + 5.5, ly + 12.5);
+      ctx.lineTo(lx + 12.5, ly + 5.5);
+      ctx.strokeStyle = '#f2a33a';
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
 function drawOverlay(ctx, mv) {
   hits = [];
   drawHud();
@@ -399,6 +516,8 @@ function drawOverlay(ctx, mv) {
     for (const p of trailData.players) drawTrail(ctx, p.points, trailData.step, now);
   }
 
+  drawHiddenAreas(ctx, mv);
+
   ctx.shadowColor = 'rgba(0,0,0,0.8)';
   ctx.shadowBlur = 3;
 
@@ -406,8 +525,10 @@ function drawOverlay(ctx, mv) {
     for (const b of day ? [] : state.beds) {
       const [sx, sy] = mv.toScreen(b.x, b.z);
       if (!visible(sx, sy)) continue;
-      mv.icon('bed', sx, sy, iconSize * 0.75, 0.9);
-      hits.push({ sx, sy, r: iconSize * 0.4, title: 'Cama', lines: [b.owner ? `de ${b.owner}` : ''].filter(Boolean), anchor: [b.x, b.z] });
+      const off = hiddenHere('bed', b);
+      mv.icon('bed', sx, sy, iconSize * 0.75, off ? 0.45 : 0.9);
+      if (off) hiddenBadge(ctx, sx, sy, iconSize * 0.4);
+      hits.push({ sx, sy, r: iconSize * 0.4, title: 'Cama', lines: [b.owner ? `de ${b.owner}` : '', off ? 'escondida — só você vê' : ''].filter(Boolean), anchor: [b.x, b.z], card: () => bedCard(b) });
     }
   }
   // O portal aberto no cartao e o do hover ligam ao par, mesmo com a camada desligada (voo ate o par).
@@ -423,7 +544,9 @@ function drawOverlay(ctx, mv) {
       const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       const lit = ends.includes(p);
-      mv.icon('portal', sx, sy, iconSize * (lit ? 1 : 0.8), p.connected || lit ? 1 : 0.55);
+      const off = hiddenHere('portal', p);
+      mv.icon('portal', sx, sy, iconSize * (lit ? 1 : 0.8), off ? 0.45 : p.connected || lit ? 1 : 0.55);
+      if (off) hiddenBadge(ctx, sx, sy, iconSize * 0.4);
       hits.push(portalHit(p, sx, sy, iconSize * 0.4));
     }
   }
@@ -437,8 +560,12 @@ function drawOverlay(ctx, mv) {
       if (!show) continue;
       const [sx, sy] = mv.toScreen(c.x, c.z);
       if (!visible(sx, sy)) continue;
-      if (c.tomb) mv.icon('death', sx, sy, iconSize * 0.85);
+      const off = hiddenHere('chest', c);
+      if (off) ctx.globalAlpha = 0.5;
+      if (c.tomb) mv.icon('death', sx, sy, iconSize * 0.85, off ? 0.5 : 1);
       else drawChest(ctx, sx, sy, mpp > 2.5 ? 12 : 15, match);
+      ctx.globalAlpha = 1;
+      if (off) hiddenBadge(ctx, sx, sy, 7);
       const lines = c.tomb ? [`${c.items.length} itens esperando`] : [c.kind, c.owner ? `de ${c.owner}` : ''].filter(Boolean);
       if (match) {
         const n = c.items.filter((i) => i[0] === found).reduce((a, i) => a + i[1], 0);
@@ -454,16 +581,15 @@ function drawOverlay(ctx, mv) {
       const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
       const name = PIN_ICONS[p.type] ?? 'pin';
-      mv.icon(name, sx, sy, iconSize, p.checked ? 0.6 : 1);
-      if (p.checked) mv.icon('checked', sx, sy, iconSize * 0.9);
-      const g = mv.settlements && baseAt(mv.settlements, p.x, p.z, 15);
-      const base = g && g.count >= BASE_MIN_PIECES ? baseHit(g) : null;
+      const off = hiddenHere('pin', p);
+      mv.icon(name, sx, sy, iconSize, off ? 0.45 : p.checked ? 0.6 : 1);
+      if (p.checked) mv.icon('checked', sx, sy, iconSize * 0.9, off ? 0.45 : 1);
+      if (off) hiddenBadge(ctx, sx, sy, iconSize * 0.45);
       hits.push({
         sx, sy, r: iconSize * 0.45, title: p.name || 'Marcação',
-        lines: [p.author ? `por ${p.author}` : '', p.checked ? 'riscada' : ''].filter(Boolean),
+        lines: [p.author ? `por ${p.author}` : '', p.checked ? 'riscada' : '', off ? 'escondida — só você vê' : ''].filter(Boolean),
         anchor: [p.x, p.z],
-        // Marcacao de uma base abre o cartao da base.
-        card: base?.card,
+        card: () => pinCard(p),
       });
       if (showLabels) labelQueue.push([p.name, sx, sy + iconSize * 0.45, 15]);
     }
@@ -475,12 +601,15 @@ function drawOverlay(ctx, mv) {
   if (layers.players) {
     ctx.shadowBlur = 4;
     for (const p of day ? [] : state.players) {
+      if (p.x == null) continue;
       const [sx, sy] = mv.toScreen(p.x, p.z);
       if (!visible(sx, sy)) continue;
-      mv.icon('player_32', sx, sy, iconSize + 4);
+      const off = myPlayerHide(p.name);
+      mv.icon('player_32', sx, sy, iconSize + 4, off ? 0.5 : 1);
+      if (off) hiddenBadge(ctx, sx, sy, iconSize * 0.5);
       hits.push({
         sx, sy, r: iconSize * 0.5, title: p.name,
-        lines: [BIOME_NAMES[p.biome] ?? '', p.ping != null ? `ping ${(p.ping * 1000).toFixed(0)} ms` : ''].filter(Boolean),
+        lines: [BIOME_NAMES[p.biome] ?? '', p.ping != null ? `ping ${(p.ping * 1000).toFixed(0)} ms` : '', off ? 'escondido — só você vê' : ''].filter(Boolean),
         anchor: [p.x, p.z],
         card: () => playerCard(p),
       });
@@ -531,10 +660,11 @@ function renderPlayers() {
   if (!online.length) list.append(el('li', { class: 'empty', text: 'Ninguém no mundo agora.' }));
   for (const p of online) {
     const li = el('li', {},
-      el('span', { class: 'name', text: p.name }),
+      el('span', { class: 'name', text: p.name + (myPlayerHide(p.name) ? ' · escondido' : '') }),
       el('span', { class: 'ping', text: p.ping != null ? `${(p.ping * 1000).toFixed(0)} ms` : '' }),
-      el('span', { class: 'where', text: `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}` }));
+      el('span', { class: 'where', text: p.x == null ? 'posição escondida' : `${BIOME_NAMES[p.biome] ?? '—'} · ${p.x.toFixed(0)}, ${p.z.toFixed(0)}` }));
     li.addEventListener('click', () => {
+      if (p.x == null) return (location.href = playerHref(p.name));
       closePops();
       mapView.goTo(p.x, p.z, Math.min(mapView.view.metersPerPixel, 1.5));
       openCard([p.x, p.z], () => playerCard(p));
@@ -847,6 +977,56 @@ async function setupTimeline() {
   describe();
 }
 
+// ---------- escondidos ----------
+
+const KIND_ICONS = { base: 'house', chest: null, portal: 'portal', bed: 'bed', pin: 'pin', player: 'player_32' };
+
+function renderHidden() {
+  const mine = myHides();
+  const count = $('hidden-count');
+  count.hidden = !mine.length;
+  count.textContent = String(mine.length);
+  const list = $('hidden-list');
+  list.replaceChildren();
+  if (!mine.length) list.append(el('li', { class: 'empty', text: 'Nada escondido por este navegador.' }));
+  for (const h of [...mine].sort((a, b) => b.at - a.at)) {
+    const where = h.kind === 'player' ? null : [h.x, h.z];
+    const img = KIND_ICONS[h.kind];
+    list.append(el('li', {},
+      img ? el('img', { src: `game/icons/${img}.png`, alt: '' }) : el('span', { class: 'chest-swatch', 'aria-hidden': 'true' }),
+      el('span', { class: 'what' },
+        el('span', { class: 'name', text: h.title || kindName(h.kind) }),
+        el('span', { class: 'meta', text: `${kindName(h.kind)} · ${dayMonth(h.at)}${h.agent ? ` · ${h.agent}` : ''}` })),
+      el('span', { class: 'acts' },
+        where ? el('button', {
+          type: 'button', class: 'btn small', text: 'Ir até',
+          onclick: () => {
+            closePops();
+            if (h.kind === 'base') mapView.fit(h.box[0], h.box[1], h.box[2], h.box[3], 80);
+            else mapView.flyTo(where[0], where[1], Math.min(mapView.view.metersPerPixel, 1.2));
+          },
+        }) : null,
+        el('button', { type: 'button', class: 'btn small', title: 'Aparece de novo para todo mundo', onclick: () => unhide(h.id) }, 'Mostrar'))));
+  }
+}
+
+// Escondeu ou mostrou: o servidor ja manda os dados de outro jeito, entao busca tudo de novo.
+async function reloadAfterHidden() {
+  renderHidden();
+  mapView.invalidate();
+  try {
+    const [s, w] = await Promise.all([getJSON('api/state'), getJSON('api/world')]);
+    state = s;
+    world = w;
+    renderPanel();
+    renderSearchResults();
+    if (mapView.renderer) await mapView.loadWorld(day);
+    await loadTrails();
+  } catch {}
+  refreshCard();
+  mapView.invalidate();
+}
+
 // ---------- popups ----------
 
 function closePops(except = null) {
@@ -947,6 +1127,8 @@ function bindPanel() {
 
 async function main() {
   readHash();
+  onHiddenChange(reloadAfterHidden);
+  ready.then(renderHidden);
   bindPanel();
   bindSearch();
   pollState();

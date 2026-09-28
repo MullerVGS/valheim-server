@@ -190,15 +190,17 @@ async function main() {
     return;
   }
   document.title = `${name} · Jahmaica`;
-  live = state?.players.find((p) => p.name === name) ?? null;
+  // Online com a posicao escondida (escondidos): aparece como online, sem lugar.
+  const online = state?.players.find((p) => p.name === name) ?? null;
+  live = online?.x != null ? online : null;
   tombs = world?.containers.filter((c) => c.tomb && c.owner === name) ?? [];
   beds = world?.beds.filter((b) => b.name === name) ?? [];
   const pins = state?.pins.filter((p) => p.author === name) ?? [];
   const { days, byHour } = activity(info.hourly);
   const minutes30 = days.reduce((a, d) => a + d.minutes, 0);
 
-  const status = live
-    ? el('p', { class: 'online' }, el('span', { class: 'dot' }), `Online agora · ${BIOME_NAMES[live.biome] ?? '—'}${live.ping != null ? ` · ping ${(live.ping * 1000).toFixed(0)} ms` : ''}`)
+  const status = online
+    ? el('p', { class: 'online' }, el('span', { class: 'dot' }), `Online agora · ${live ? BIOME_NAMES[live.biome] ?? '—' : 'posição escondida'}${online.ping != null ? ` · ping ${(online.ping * 1000).toFixed(0)} ms` : ''}`)
     : el('p', {}, el('span', { class: 'dot' }), `Visto por último ${ago(me.lastSeen)}`);
 
   // Mapa com o rastro
@@ -305,7 +307,7 @@ async function main() {
     setInterval(async () => {
       try {
         const s = await getJSON('api/state');
-        live = s.players.find((p) => p.name === name) ?? null;
+        live = s.players.find((p) => p.name === name && p.x != null) ?? null;
         mapView.invalidate();
       } catch {}
     }, 15000);
