@@ -14,6 +14,9 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   bases que ergueu, lápides, camas, marcações) e `/base/<x>,<z>` (`base.html`/`base.js`: construtores, materiais,
   crescimento dia a dia, estoque somado e cada baú). No mapa, clicar num jogador, base ou baú abre um cartão com
   o básico e o link da página; o painel tem busca de item nos baús, rastros e a linha do tempo com play.
+- `public/sidebar.js`: barra lateral de navegação de todas as páginas (mapa, base, jogador). Página ou ferramenta
+  nova entra como item em `NAV`; `soon: true` mostra "em breve" sem link. Tela larga: trilho de ícones que abre
+  com os nomes e lembra a escolha (`localStorage`); tela média: abre por cima; celular: gaveta pelo botão de menu.
 - `world.mjs`: lê o save ao vivo (`SAVE_DIR`) quando o autosave termina (`_main.<n>.ok` novo): baús com o que tem
   dentro (qualquer ZDO com inventário e criador, e lápides), placas a até 2,5 m como nome do baú, camas e quem
   construiu cada peça (id do personagem pelas camas/lápides; sem eles, `creatorIndex` → histórico de jogadores do
