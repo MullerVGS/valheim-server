@@ -41,13 +41,13 @@ function emptyPieces() {
   return b;
 }
 
-// Mapa parado: agua, nevoa e nuvens congeladas neste instante. Animar pedia redesenhar o shader
-// inteiro varias vezes por segundo, o que prendia a GPU e ficava aos trancos com a janela sem foco.
-const STILL_T = 40;
-const STILL_ENV = { ...DAY, cloudOffset: [STILL_T * 0.0012, 0, STILL_T * 0.0007] };
+// Agua, nevoa e nuvens andam a 12 quadros por segundo, so com a janela em foco: fora dela o relogio
+// para e o mapa fica no ultimo quadro, sem desenhar nada. Parado, e este instante.
+const AMBIENT_MS = 1000 / 12;
+const START_T = 40;
 
 export class MapView {
-  constructor({ map, overlay, view, icons = [], onDraw, onHover, onClick, onChange }) {
+  constructor({ map, overlay, view, icons = [], animate = false, onDraw, onHover, onClick, onChange }) {
     this.map = map;
     this.overlay = overlay;
     this.ctx = overlay.getContext('2d');
@@ -65,6 +65,11 @@ export class MapView {
     this.settlements = null;
     this.dirty = true;
     this.frameQueued = false;
+    this.animate = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.clock = START_T;
+    this.lastTick = null;
+    this.lastDraw = -Infinity;
+    if (this.animate) window.addEventListener('focus', () => this.queue());
     this.flight = null;
     // Icones e marcas ja desenhados com a sombra, por tamanho: sombra desfocada a cada quadro custa caro.
     this.sprites = new Map();
@@ -146,9 +151,17 @@ export class MapView {
   // Pede um quadro; varias chamadas antes dele viram um desenho so.
   invalidate() {
     this.dirty = true;
+    this.queue();
+  }
+
+  queue() {
     if (this.frameQueued) return;
     this.frameQueued = true;
-    requestAnimationFrame(() => this.frame());
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  env() {
+    return { ...DAY, cloudOffset: [this.clock * 0.0012, 0, this.clock * 0.0007] };
   }
 
   bindInput() {
@@ -214,12 +227,19 @@ export class MapView {
     map.addEventListener('dblclick', (e) => this.zoomAt(...this.local(e), 0.5));
   }
 
-  // So desenha quando algo mudou (vista, dados, camadas); parado, o mapa nao gasta nada.
-  frame() {
+  // Terreno: quando algo mudou e, animando, no ritmo da agua. Camada 2D: so quando algo mudou.
+  frame(now) {
     this.frameQueued = false;
+    const playing = this.animate && document.hasFocus();
+    if (playing && this.lastTick != null) this.clock += Math.min(now - this.lastTick, 250) / 1000;
+    this.lastTick = playing ? now : null;
+    if (playing) this.queue();
+    const tick = playing && now - this.lastDraw >= AMBIENT_MS;
+    if (!this.dirty && !tick) return;
+    this.lastDraw = now;
+    this.renderer?.draw(this.view, this.env(), this.clock);
     if (!this.dirty) return;
     this.dirty = false;
-    this.renderer?.draw(this.view, STILL_ENV, STILL_T);
     const ctx = this.ctx;
     ctx.setTransform(this.view.pixelRatio, 0, 0, this.view.pixelRatio, 0, 0);
     ctx.clearRect(0, 0, this.width, this.height);
@@ -277,11 +297,11 @@ export class MapView {
     const out = document.createElement('canvas');
     out.width = Math.round(width * dpr);
     out.height = Math.round(height * dpr);
-    this.renderer.draw({ ...this.view, x, z, metersPerPixel }, STILL_ENV, STILL_T);
+    this.renderer.draw({ ...this.view, x, z, metersPerPixel }, this.env(), this.clock);
     const sw = Math.min(out.width, this.map.width);
     const sh = Math.min(out.height, this.map.height);
     out.getContext('2d').drawImage(this.map, (this.map.width - sw) / 2, (this.map.height - sh) / 2, sw, sh, 0, 0, out.width, out.height);
-    this.renderer.draw(this.view, STILL_ENV, STILL_T);
+    this.renderer.draw(this.view, this.env(), this.clock);
     return out;
   }
 
