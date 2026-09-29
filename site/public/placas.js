@@ -3,6 +3,8 @@
 // catalogo que o plugin usa: arte nova no custom.txt do servidor aparece aqui sem deploy.
 import { SignSim } from './signsim.js';
 import { LIMIT, buildIcon, compose, flat, hoverText, normalize, parseIcon, plan } from './signcode.js';
+import { serialize } from './signrich.js';
+import { RichEditor } from './richedit.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'valheim.placa';
@@ -43,6 +45,75 @@ function loadEntry(id) {
   return p;
 }
 
+// ---- o editor: visual (padrao) ou codigo. O textarea guarda o texto nos dois modos. ----
+
+const MODE_KEY = 'valheim.placa.modo';
+let visual = true;
+
+const iconKey = (inner) => parseIcon(`:${inner}:`)?.key;
+const rich = new RichEditor($('rich'), {
+  env: {
+    isTag: (raw) => SignSim.unknown(raw, {}).length === 0,
+    isIcon: (inner) => { const key = iconKey(inner); return !!key && catalog.known(key); },
+    isMacro: (name) => Object.hasOwn(catalog.macros, name),
+  },
+  chip: chipFor,
+  onChange: (src) => { ta.value = src; schedule(); },
+  onSelect: () => { paintToolbar(); caretMoved(); },
+});
+
+// Chip do editor visual: icone com a imagem e o nome; abreviacao e tag sem botao, como no codigo.
+function chipFor(a) {
+  const el = document.createElement('span');
+  el.className = `chip chip-${a.kind}`;
+  el.title = a.raw;
+  if (a.kind !== 'icon') {
+    el.textContent = a.raw;
+    return el;
+  }
+  const p = parseIcon(a.raw);
+  const id = p && catalog.resolve(p.key);
+  const info = id && byId.get(id);
+  const pic = document.createElement('i');
+  if (info?.n != null) atlasCell(pic, info.n, 22);
+  else pic.className = 'art';
+  const name = document.createElement('span');
+  name.textContent = (info?.name || p?.inner || a.raw) + (p?.brightness != null ? ` ${p.brightness}%` : '');
+  el.append(pic, name);
+  return el;
+}
+
+function setMode(toVisual, focus = true) {
+  visual = toVisual;
+  try { localStorage.setItem(MODE_KEY, visual ? 'rich' : 'code'); } catch {}
+  $('mode-rich').setAttribute('aria-selected', String(visual));
+  $('mode-code').setAttribute('aria-selected', String(!visual));
+  document.querySelector('.editor').classList.toggle('is-code', !visual);
+  closeSuggest();
+  closePop();
+  if (visual) {
+    // O cursor passa para o mesmo ponto do codigo.
+    const a = ta.selectionStart;
+    const b = ta.selectionEnd;
+    rich.setSource(ta.value);
+    rich.sel = { start: rich.atomIndex(a), end: rich.atomIndex(b) };
+    $('rich').hidden = false;
+    ta.hidden = mirror.hidden = true;
+    if (focus) rich.focus();
+  } else {
+    const { pos } = serialize(rich.atoms);
+    const a = rich.src === ta.value ? pos[rich.sel.start] : ta.value.length;
+    const b = rich.src === ta.value ? pos[rich.sel.end] : ta.value.length;
+    $('rich').hidden = true;
+    ta.hidden = mirror.hidden = false;
+    if (focus) { ta.focus(); ta.setSelectionRange(a, b); }
+  }
+  paintToolbar();
+  schedule();
+}
+$('mode-rich').addEventListener('click', () => setMode(true));
+$('mode-code').addEventListener('click', () => setMode(false));
+
 // ---- estado ----
 
 let queued = false;
@@ -75,7 +146,8 @@ function update(force = true) {
     markLibrary(p);
     save(source);
   }
-  paintMirror(source, current, lastUnknown);
+  if (!visual) paintMirror(source, current, lastUnknown);
+  $('rich').classList.toggle('whole-icon', current.kind === 'icon');
   suggest();
 }
 let caretQueued = false;
@@ -92,6 +164,7 @@ function meters(v) { return `${v.toFixed(v < 10 ? 1 : 0).replace('.', ',')} m`; 
 function paintSign(p) {
   const loading = p.kind === 'icon' && p.final == null;
   const info = SignSim.render(canvas, loading ? '' : p.final, { macros: {} });
+  if (p.kind !== 'icon') rich.setAutoSize(info.size);
   const badge = $('overflow');
   badge.hidden = !loading && !info.overflow;
   badge.textContent = loading ? 'carregando o desenho…'
@@ -191,16 +264,29 @@ function replaceRange(start, end, text, selectFrom, selectTo) {
   if (selectFrom != null) ta.setSelectionRange(start + selectFrom, start + selectTo);
   schedule();
 }
-const replaceAll = (text) => replaceRange(0, ta.value.length, text);
+function replaceAll(text) {
+  if (!visual) return replaceRange(0, ta.value.length, text);
+  rich.setSource(text, { record: true });
+}
 function insertAtCaret(text, pick) {
+  if (visual) {
+    rich.focus();
+    return rich.insertSource(text);
+  }
   const at = pick ? text.indexOf(pick) : -1;
   if (at >= 0) replaceRange(ta.selectionStart, ta.selectionEnd, text, at, at + pick.length);
   else replaceRange(ta.selectionStart, ta.selectionEnd, text, text.length, text.length);
 }
 
-// ---- barra de inserir ----
+// ---- barra: formatar ----
+// No visual, o botao muda o estilo do trecho escolhido (ou do que for digitado dali em diante). No codigo,
+// poe as tags em volta da selecao.
 
 function wrap(open, close, pick) {
+  if (visual) {
+    rich.focus();
+    return rich.wrapSource(open, close);
+  }
   const { selectionStart: s, selectionEnd: e, value } = ta;
   const inside = value.slice(s, e);
   const text = open + inside + (inside ? close : '');
@@ -209,32 +295,179 @@ function wrap(open, close, pick) {
   else replaceRange(s, e, text, text.length, text.length);
 }
 
-document.querySelector('.toolbar').addEventListener('click', (e) => {
-  const kind = e.target.closest('[data-insert]')?.dataset.insert;
-  if (kind === 'size') wrap('<size=5>', '</size>', '5');
-  else if (kind === 'unlit') wrap('{u}', '</material>');
-  else if (kind === 'mark') wrap('<mark=#000000aa>', '</mark>', '000000aa');
-});
+const TAGS = {
+  c: (v) => [`<#${v}>`, '</color>'],
+  z: (v) => [`<size=${v}>`, '</size>'],
+  m: (v) => [`<mark=#${v}>`, '</mark>'],
+  l: () => ['{u}', '</material>'],
+  i: () => ['<i>', '</i>'],
+  u: () => ['<u>', '</u>'],
+  s: () => ['<s>', '</s>'],
+};
 
-// Cor em 12 bits: <#f80> custa 3 caracteres a menos que <#ff8800> e no jogo nao se ve diferenca. Enquanto o
-// seletor esta aberto, a mesma tag e reescrita.
-let picking = null;
+// value: o novo valor, null = padrao, 'toggle' = liga/desliga. how 'pick': o seletor de cor ainda aberto.
+function format(key, value, how) {
+  if (visual) {
+    if (value === 'toggle') rich.toggle(key);
+    else rich.applyStyle(key, value, how);
+    if (how !== 'pick') rich.focus();
+    return;
+  }
+  const [open, close] = TAGS[key](value);
+  if (value == null) insertAtCaret(close);
+  else wrap(open, close);
+}
+
+// Cores com cara de Valheim, em 3 digitos (<#f80> custa 3 caracteres a menos que <#ff8800>).
+const COLORS = [['fff', 'Branco'], ['fc6', 'Dourado'], ['f80', 'Laranja'], ['ff0', 'Amarelo'], ['f44', 'Vermelho'],
+  ['f6c', 'Rosa'], ['c6f', 'Roxo'], ['69f', 'Azul'], ['4cf', 'Ciano'], ['6d4', 'Verde'], ['a63', 'Madeira'], ['888', 'Cinza'], ['000', 'Preto']];
+const MARKS = [['000000aa', 'Sombra'], ['00000066', 'Sombra leve'], ['ffffff44', 'Clara'], ['ff880066', 'Laranja'],
+  ['ff333366', 'Vermelha'], ['44dd4455', 'Verde'], ['3399ff66', 'Azul']];
+const SIZES = ['2', '3', '4', '5', '6', '8'];
+
 function hex3(value) {
   return [1, 3, 5].map((i) => Math.round(parseInt(value.substr(i, 2), 16) / 17).toString(16)).join('');
 }
-$('color').addEventListener('input', (e) => {
-  const tag = `<#${hex3(e.target.value)}>`;
-  if (picking && ta.value.slice(picking.start, picking.start + picking.length) === picking.tag) {
-    replaceRange(picking.start, picking.start + picking.length, tag, tag.length, tag.length);
-  } else {
-    const start = ta.selectionStart;
-    replaceRange(start, ta.selectionEnd, tag, tag.length, tag.length);
-    picking = { start };
+
+const pop = $('pop');
+let popFor = null;
+
+function swatch(value, label, current, key) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = value ? 'sw' : 'sw sw-none';
+  if (value) b.style.setProperty('--c', `#${value}`);
+  b.setAttribute('aria-label', label);
+  b.dataset.tip = value ? `${label} · <#${value}>` : label;
+  b.setAttribute('aria-pressed', String((current ?? null) === value));
+  b.addEventListener('click', () => { closePop(); format(key, value); });
+  return b;
+}
+
+function popTitle(text) {
+  const h = document.createElement('p');
+  h.className = 'pop-title';
+  h.textContent = text;
+  return h;
+}
+
+function openPop(btn) {
+  if (popFor === btn) return closePop();
+  closePop();
+  const kind = btn.dataset.pop;
+  const cur = visual ? rich.currentStyle() : {};
+  popFor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  pop.textContent = '';
+  pop.dataset.kind = kind;
+  if (kind === 'color' || kind === 'mark') {
+    const key = kind === 'color' ? 'c' : 'm';
+    pop.append(popTitle(kind === 'color' ? 'Cor do texto' : 'Faixa atrás do texto'));
+    const grid = document.createElement('div');
+    grid.className = 'sw-grid';
+    grid.append(swatch(null, kind === 'color' ? 'Padrão da placa' : 'Sem faixa', cur[key], key));
+    for (const [v, label] of kind === 'color' ? COLORS : MARKS) grid.append(swatch(v, label, cur[key], key));
+    pop.append(grid);
+    if (kind === 'color') {
+      const custom = document.createElement('label');
+      custom.className = 'sw-custom';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = cur.c && /^[0-9a-f]{3}$/.test(cur.c) ? `#${[...cur.c].map((d) => d + d).join('')}`
+        : cur.c && /^[0-9a-f]{6}/.test(cur.c) ? `#${cur.c.slice(0, 6)}` : '#ff8800';
+      // No visual a cor muda enquanto o seletor anda; no codigo entra so quando ele fecha.
+      input.addEventListener('input', () => { if (visual) format('c', hex3(input.value), 'pick'); });
+      input.addEventListener('change', () => { if (!visual) format('c', hex3(input.value)); closePop(); if (visual) rich.focus(); });
+      custom.append(input, document.createTextNode('Outra cor…'));
+      pop.append(custom);
+    }
+  } else if (kind === 'size') {
+    pop.append(popTitle('Tamanho da letra'));
+    const row = document.createElement('div');
+    row.className = 'size-row';
+    for (const v of [null, ...SIZES]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'size-opt';
+      b.textContent = v ?? 'Auto';
+      if (v) b.style.fontSize = `${10 + Number(v) * 1.6}px`;
+      b.setAttribute('aria-pressed', String((cur.z ?? null) === v));
+      b.addEventListener('click', () => { closePop(); format('z', v); });
+      row.append(b);
+    }
+    pop.append(row);
+    const other = document.createElement('label');
+    other.className = 'size-other';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0.5';
+    input.max = '40';
+    input.step = '0.5';
+    input.placeholder = 'outro';
+    if (cur.z && cur.z !== 'mixed' && !SIZES.includes(cur.z)) input.value = cur.z;
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const v = Number(input.value);
+      if (v > 0) { closePop(); format('z', String(Math.round(v * 10) / 10)); }
+    });
+    other.append(input, document.createTextNode(' Enter aplica'));
+    pop.append(other);
+    pop.insertAdjacentHTML('beforeend', '<p class="pop-note">Auto: a placa encaixa o texto sozinha (1 a 8). Tábua: 20 × 10.</p>');
   }
-  Object.assign(picking, { tag, length: tag.length });
+  pop.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth;
+  pop.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left))}px`;
+  pop.style.top = `${r.bottom + 6}px`;
+}
+
+function closePop() {
+  if (!popFor) return;
+  popFor.setAttribute('aria-expanded', 'false');
+  popFor = null;
+  pop.hidden = true;
+}
+
+const toolbar = document.querySelector('.toolbar');
+// Botao da barra nao rouba o foco: a selecao do texto continua la.
+for (const el of [toolbar, pop]) {
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') && !e.target.closest('#lib-open, .modes')) e.preventDefault();
+  });
+}
+toolbar.addEventListener('click', (e) => {
+  const popBtn = e.target.closest('[data-pop]');
+  if (popBtn) return openPop(popBtn);
+  const key = e.target.closest('[data-toggle]')?.dataset.toggle;
+  if (key) format(key, 'toggle');
 });
-$('color').addEventListener('change', () => { picking = null; });
-$('color').addEventListener('click', () => { picking = null; });
+document.addEventListener('pointerdown', (e) => {
+  if (popFor && !pop.contains(e.target) && !popFor.contains(e.target)) closePop();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && popFor) {
+    closePop();
+    if (visual) rich.focus();
+  }
+});
+
+// O estado do trecho escolhido nos botoes.
+function paintToolbar() {
+  const st = visual ? rich.currentStyle() : null;
+  const paintSwatch = (el, v) => {
+    el.classList.toggle('mixed', v === 'mixed');
+    el.classList.toggle('none', !v);
+    el.style.background = v && v !== 'mixed' ? `#${v}` : '';
+  };
+  paintSwatch($('color-swatch'), st?.c);
+  paintSwatch($('mark-swatch'), st?.m);
+  $('size-val').textContent = !st ? '' : st.z === 'mixed' ? 'vários' : st.z ?? 'auto';
+  for (const b of toolbar.querySelectorAll('[data-toggle]')) {
+    const v = st?.[b.dataset.toggle];
+    b.setAttribute('aria-pressed', v === 'mixed' ? 'mixed' : String(v === true));
+  }
+}
 
 $('clear').addEventListener('click', () => replaceAll(''));
 
@@ -391,7 +624,7 @@ function useCode(id) {
   const p = parseIcon(flat(text));
   if (p) return replaceAll(buildIcon({ ...p, inner: codeFor(id, p.label.shown) }));
   const code = `:${codeFor(id, !!text.trim())}:`;
-  const before = text.slice(0, ta.selectionStart);
+  const before = visual ? rich.textBefore(1) : text.slice(0, ta.selectionStart);
   insertAtCaret(before && !/\s$/.test(before) ? ` ${code}` : code);
 }
 
@@ -541,7 +774,7 @@ function openLibrary(open, which) {
     closeSuggest();
     showLibrary();
     $('lib-q').focus();
-  } else if (document.activeElement && lib.contains(document.activeElement)) ta.focus();
+  } else if (document.activeElement && lib.contains(document.activeElement)) focusEditor();
 }
 $('lib-open').addEventListener('click', () => openLibrary(lib.hidden));
 $('lib-close').addEventListener('click', () => openLibrary(false));
@@ -600,12 +833,24 @@ function closeSuggest() {
   acStart = -1;
 }
 
-function suggest() {
-  if (!index || !lib.hidden || document.activeElement !== ta || ta.selectionStart !== ta.selectionEnd) return closeSuggest();
+// O mesmo autocompletar nos dois modos: o texto antes do cursor e onde o cursor esta na tela.
+function caretState() {
+  if (visual) {
+    if (!rich.hasFocus() || rich.sel.start !== rich.sel.end) return null;
+    return { at: rich.sel.end, before: rich.textBefore(42) };
+  }
+  if (document.activeElement !== ta || ta.selectionStart !== ta.selectionEnd) return null;
   const at = ta.selectionEnd;
-  const m = QUERY.exec(ta.value.slice(Math.max(0, at - 42), at));
+  return { at, before: ta.value.slice(Math.max(0, at - 42), at) };
+}
+
+function suggest() {
+  const caret = index && lib.hidden ? caretState() : null;
+  if (!caret) return closeSuggest();
+  const m = QUERY.exec(caret.before);
   if (!m) { acDismissed = -1; return closeSuggest(); }
-  const start = at - m[0].length;
+  // No visual o cursor anda em pecas (um code point cada); no codigo, em unidades do texto.
+  const start = caret.at - (visual ? [...m[0]].length : m[0].length);
   if (start === acDismissed) return closeSuggest();
   const hits = search(normalize(m[1]), 8);
   if (!hits.length) return closeSuggest();
@@ -639,10 +884,10 @@ function suggest() {
 }
 
 function placeSuggest() {
-  const mark = document.getElementById('caret-at');
-  if (ac.hidden || !mark) return;
+  if (ac.hidden) return;
+  const r = visual ? rich.caretRect() : document.getElementById('caret-at')?.getBoundingClientRect();
+  if (!r) return;
   const field = ac.parentElement.getBoundingClientRect();
-  const r = mark.getBoundingClientRect();
   const w = ac.offsetWidth;
   const h = ac.offsetHeight;
   ac.style.left = `${Math.max(4, Math.min(field.width - w - 4, r.left - field.left - 10))}px`;
@@ -655,12 +900,17 @@ function acceptSuggest() {
   if (!h) return;
   const start = acStart;
   closeSuggest();
+  if (visual) {
+    const end = rich.sel.end;
+    const close = rich.atoms[end]?.ch === ':' ? 1 : 0;
+    return rich.insertSource(`:${h.key}:`, { start, end: end + close });
+  }
   const end = ta.selectionEnd;
   const close = ta.value[end] === ':' ? 1 : 0;
   replaceRange(start, end + close, `:${h.key}:`);
 }
 
-ta.addEventListener('keydown', (e) => {
+function acKeys(e) {
   if (ac.hidden) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     acSel = (acSel + (e.key === 'ArrowDown' ? 1 : acRows.length - 1)) % acRows.length;
@@ -669,7 +919,17 @@ ta.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { acDismissed = acStart; closeSuggest(); }
   else return;
   e.preventDefault();
-});
+  e.stopImmediatePropagation();
+}
+ta.addEventListener('keydown', acKeys);
+$('rich').addEventListener('keydown', acKeys, true);
+$('rich').addEventListener('scroll', placeSuggest);
+$('rich').addEventListener('blur', () => setTimeout(() => { if (!rich.hasFocus()) closeSuggest(); }, 120));
+
+function focusEditor() {
+  if (visual) rich.focus();
+  else ta.focus();
+}
 
 // ---- colinha: o que o plugin e o jogo entendem; clique poe o exemplo no cursor ----
 
@@ -680,7 +940,7 @@ const CHEAT = [
     { code: '<size=12>:mel:', text: 'lado do ícone, 1–18', pick: '12' },
     { code: ':mel 50%:', text: 'brilho do ícone', pick: '50' },
     { code: ':mapa g:', text: 'artes do servidor', arts: true },
-    { code: '{u}', text: 'sem luz: brilha no escuro' },
+    { code: '{u}', text: 'brilho: o texto brilha no escuro' },
     { code: 'texto > 50', text: 'vira coladas com >>, sozinho', none: true },
   ]],
   ['Jogo', [
@@ -777,6 +1037,7 @@ async function loadIndex() {
     add(id, index.names[id] ?? '');
     byId.get(id).art = true;
   }));
+  if (visual) rich.refresh();
   searchList = [...byId].map(([id, e]) => ({
     id,
     art: e.art ? 1 : 0,
@@ -790,6 +1051,9 @@ async function loadIndex() {
 }
 
 ta.value = startText();
+let startVisual = true;
+try { startVisual = localStorage.getItem(MODE_KEY) !== 'code'; } catch {}
+setMode(startVisual, false);
 SignSim.onFonts(schedule);
 document.fonts?.ready.then(schedule);
 update();
