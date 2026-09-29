@@ -51,6 +51,8 @@ function schedule() {
   queued = true;
   requestAnimationFrame(() => { queued = false; update(); });
 }
+let lastSource = null;
+let lastUnknown = new Set();
 
 let saveTimer = 0;
 function save(text) {
@@ -58,18 +60,29 @@ function save(text) {
   saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, text); } catch {} }, 400);
 }
 
-function update() {
+// force: o catalogo chegou (ou um desenho): refaz o plano mesmo com o texto igual.
+function update(force = true) {
   const source = ta.value;
-  const p = plan(source, index ? catalog : null);
-  current = p;
-  const unknown = new Set(SignSim.unknown(p.kind === 'icon' ? '' : flat(source), catalog.macros));
-  paintMirror(source, p, unknown);
-  paintSign(p);
-  paintKnobs(p);
-  paintSteps(p);
-  paintStats(p, unknown);
-  markLibrary(p);
-  save(source);
+  if (force || source !== lastSource || !current) {
+    lastSource = source;
+    const p = plan(source, index ? catalog : null);
+    current = p;
+    lastUnknown = new Set(SignSim.unknown(p.kind === 'icon' ? '' : flat(source), catalog.macros));
+    paintSign(p);
+    paintKnobs(p);
+    paintSteps(p);
+    paintStats(p, lastUnknown);
+    markLibrary(p);
+    save(source);
+  }
+  paintMirror(source, current, lastUnknown);
+  suggest();
+}
+let caretQueued = false;
+function caretMoved() {
+  if (caretQueued) return;
+  caretQueued = true;
+  requestAnimationFrame(() => { caretQueued = false; update(false); });
 }
 
 // ---- a placa ----
@@ -135,22 +148,40 @@ function tokenClass(tok, p, unknown) {
   return catalog.known(key) ? ['i'] : null;
 }
 
+// O espelho leva um marcador vazio onde esta o cursor: e dele que o autocompletar tira a posicao.
+const CARET = '<i class="caret-at" id="caret-at"></i>';
 function paintMirror(source, p, unknown) {
+  const at = ta.selectionStart === ta.selectionEnd ? ta.selectionEnd : -1;
   let html = '';
   let last = 0;
+  let placed = false;
+  const plain = (a, b) => {
+    if (!placed && at >= a && at <= b) {
+      placed = true;
+      return esc(source.slice(a, at)) + CARET + esc(source.slice(at, b));
+    }
+    return esc(source.slice(a, b));
+  };
   for (const m of source.matchAll(TOKEN)) {
     const cls = tokenClass(m[0], p, unknown);
     if (!cls) continue;
-    html += esc(source.slice(last, m.index));
+    html += plain(last, m.index);
     const style = cls[1] ? ` style="--sw:${cls[1]}"` : '';
-    html += `<span class="${cls[0]}"${style}>${esc(m[0])}</span>`;
-    last = m.index + m[0].length;
+    const end = m.index + m[0].length;
+    const inside = !placed && at > m.index && at < end;
+    if (inside) placed = true;
+    const body = inside ? esc(m[0].slice(0, at - m.index)) + CARET + esc(m[0].slice(at - m.index)) : esc(m[0]);
+    html += `<span class="${cls[0]}"${style}>${body}</span>`;
+    last = end;
   }
-  mirror.innerHTML = `${html}${esc(source.slice(last))}\n `;
+  mirror.innerHTML = `${html}${plain(last, source.length)}\n `;
   mirror.scrollTop = ta.scrollTop;
 }
-ta.addEventListener('scroll', () => { mirror.scrollTop = ta.scrollTop; });
+ta.addEventListener('scroll', () => { mirror.scrollTop = ta.scrollTop; placeSuggest(); });
 ta.addEventListener('input', schedule);
+ta.addEventListener('click', caretMoved);
+ta.addEventListener('keyup', (e) => { if (!['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key) || ac.hidden) caretMoved(); });
+ta.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== ta) closeSuggest(); }, 120));
 
 // Troca pelo editor (entra no desfazer do navegador quando da).
 function replaceRange(start, end, text, selectFrom, selectTo) {
@@ -161,6 +192,11 @@ function replaceRange(start, end, text, selectFrom, selectTo) {
   schedule();
 }
 const replaceAll = (text) => replaceRange(0, ta.value.length, text);
+function insertAtCaret(text, pick) {
+  const at = pick ? text.indexOf(pick) : -1;
+  if (at >= 0) replaceRange(ta.selectionStart, ta.selectionEnd, text, at, at + pick.length);
+  else replaceRange(ta.selectionStart, ta.selectionEnd, text, text.length, text.length);
+}
 
 // ---- barra de inserir ----
 
@@ -243,14 +279,15 @@ function flash(button, text) {
   button._flash = setTimeout(() => { button.textContent = was; }, 1400);
 }
 
-function step(html, sub) {
+function step(html, soft) {
   const li = document.createElement('li');
-  li.className = 'step';
-  li.innerHTML = `<p>${html}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
+  li.className = soft ? 'step soft' : 'step';
+  li.innerHTML = `<p>${html}</p>`;
   return li;
 }
 
 const K = (k) => `<kbd>${k}</kbd>`;
+const ARROW = ' → ';
 
 function paintSteps(p) {
   const list = $('steps');
@@ -260,21 +297,19 @@ function paintSteps(p) {
   if (!p.parts.length) {
     const li = document.createElement('li');
     li.className = 'step-empty';
-    li.textContent = 'Escreva no editor: aqui aparece o que colar na placa, em ordem.';
+    li.textContent = 'Escreva ao lado.';
     list.append(li);
     return;
   }
   const many = p.parts.length > 1;
-  list.append(step(`Mire a placa, aperte ${K('E')}, apague o que houver (${K('Ctrl')}+${K('A')}, ${K('Delete')}) e confirme vazia com ${K('Enter')}.`,
-    'Placa nova pode pular. Numa que já tinha ícone ou texto longo, é isso que faz o servidor esquecer o anterior.'));
+  const server = p.kind === 'icon' || p.kind === 'long' || p.kind === 'macro';
+  list.append(step(`Placa usada: ${K('E')}${ARROW}${K('Ctrl')}+${K('A')} ${K('Del')}${ARROW}${K('Enter')}`, true));
   let next = null;
   p.parts.forEach((part, n) => {
     const key = `${n}\u0001${part}`;
-    const first = n === 0;
-    const li = step(first
-      ? `Aperte ${K('E')}, cole com ${K('Ctrl')}+${K('V')} e confirme com ${K('Enter')}.`
-      : `Aperte ${K('E')} de novo, apague o que o campo mostrar, cole a continuação e ${K('Enter')}.`,
-    !first && n === 1 ? 'Começa com >>: o servidor emenda no que a placa já tem. Até o último pedaço a placa mostra só o começo.' : '');
+    const li = step(n === 0
+      ? `${K('E')}${ARROW}colar${ARROW}${K('Enter')}`
+      : `${K('E')}${ARROW}apagar${ARROW}colar${ARROW}${K('Enter')}`);
     const box = document.createElement('div');
     box.className = 'paste';
     const pre = document.createElement('pre');
@@ -291,7 +326,7 @@ function paintSteps(p) {
     });
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = `${many ? `${n + 1} de ${p.parts.length} · ` : ''}${part.length} de ${LIMIT} caracteres`;
+    meta.textContent = `${many ? `${n + 1}/${p.parts.length} · ` : ''}${part.length}/${LIMIT}`;
     box.append(pre, btn, meta);
     li.append(box);
     if (copied.has(key)) li.dataset.done = '';
@@ -299,16 +334,14 @@ function paintSteps(p) {
     list.append(li);
   });
   if (next) next.dataset.next = '';
-  const last = p.kind === 'icon' ? 'Em até um segundo o servidor troca o código pelo desenho.'
-    : p.kind === 'long' || p.kind === 'macro' ? 'Em até um segundo o servidor grava o texto inteiro, como na prévia.'
-      : 'Pronto: a placa fica como na prévia.';
-  list.append(step(last, p.kind === 'icon' || p.kind === 'long' || p.kind === 'macro'
-    ? 'Quem abre a placa depois vê o texto cortado no campo; se confirmar sem mexer, o servidor devolve o inteiro.' : ''));
+  list.append(step(p.kind === 'icon' ? '~1 s: servidor desenha.'
+    : server ? '~1 s: servidor grava tudo.' : 'Pronto.', true));
+  if (server) list.append(step('Campo mostra cortado: normal. Confirmar sem mexer não estraga.', true));
 
   const saved = flat(ta.value).length - p.typed.length;
   if (saved > 0) {
     note.hidden = false;
-    note.textContent = `Encurtado sem mudar a placa: ${saved} caractere${saved > 1 ? 's' : ''} a menos (cores de 3 dígitos e {u}).`;
+    note.textContent = `−${saved} caractere${saved > 1 ? 's' : ''} (cor curta, {u}), mesma placa.`;
   }
 }
 
@@ -318,16 +351,16 @@ function paintStats(p, unknown) {
   const stats = $('stats');
   const n = p.typed.length;
   stats.innerHTML = !n ? '' : p.parts.length <= 1
-    ? `<strong>${n}</strong> de ${LIMIT} · cabe numa colada`
+    ? `<strong>${n}</strong>/${LIMIT} · 1 colada`
     : `<strong>${n}</strong> caracteres · <strong>${p.parts.length}</strong> coladas`;
   const problems = [];
   if (p.kind === 'icon') {
-    if (!p.known) problems.push(`:${p.icon.inner}: não existe; o jogo mostra o ícone padrão`);
-    if (p.mode === 'hover') problems.push('nome com mais de 22 letras só aparece ao mirar');
+    if (!p.known) problems.push(`:${p.icon.inner}: não existe → ícone padrão`);
+    if (p.mode === 'hover') problems.push('nome > 22 letras: só ao mirar');
   }
-  if (p.notes.includes('icon-too-long')) problems.push('código de ícone só vale numa colada (até 50): assim sai escrito');
-  if (p.notes.includes('starts-with-continuation')) problems.push('começar com >> emenda no texto que a placa já tem');
-  if (unknown.size) problems.push(`o jogo não entende ${[...unknown].slice(0, 3).join(' ')}: sai escrito na placa`);
+  if (p.notes.includes('icon-too-long')) problems.push('ícone só vale sozinho, até 50: sai escrito');
+  if (p.notes.includes('starts-with-continuation')) problems.push('>> no começo emenda no que já está na placa');
+  if (unknown.size) problems.push(`jogo não entende ${[...unknown].slice(0, 3).join(' ')}: sai escrito`);
   $('problems').textContent = problems.join(' · ');
 }
 
@@ -352,12 +385,14 @@ function codeFor(id, withLabel) {
   return withLabel || !info?.art ? shortest : id;
 }
 
+// Placa que ja e so um icone troca o icone; senao o codigo entra no cursor.
 function useCode(id) {
   const text = ta.value;
   const p = parseIcon(flat(text));
-  if (p) replaceAll(buildIcon({ ...p, inner: codeFor(id, p.label.shown) }));
-  else if (!text.trim()) replaceAll(`:${codeFor(id, false)}:`);
-  else replaceAll(`${text.replace(/\s+$/, '')} :${codeFor(id, true)}:`);
+  if (p) return replaceAll(buildIcon({ ...p, inner: codeFor(id, p.label.shown) }));
+  const code = `:${codeFor(id, !!text.trim())}:`;
+  const before = text.slice(0, ta.selectionStart);
+  insertAtCaret(before && !/\s$/.test(before) ? ` ${code}` : code);
 }
 
 function markLibrary(p) {
@@ -367,12 +402,17 @@ function markLibrary(p) {
   (byId.get(id)?.tile)?.setAttribute('aria-pressed', 'true');
 }
 
+function atlasCell(el, n, px) {
+  const rows = Math.ceil(index.items.length / index.cols);
+  el.style.backgroundImage = `url(api/signs/atlas.png?v=${index.v})`;
+  el.style.backgroundSize = `${index.cols * px}px ${rows * px}px`;
+  el.style.backgroundPosition = `${-(n % index.cols) * px}px ${-Math.floor(n / index.cols) * px}px`;
+}
+
 function buildItems() {
   const grid = document.createElement('div');
   grid.className = 'icon-grid';
   const px = 36;
-  const url = `api/signs/atlas.png?v=${index.v}`;
-  const rows = Math.ceil(index.items.length / index.cols);
   const sorted = index.items.map(([id], n) => ({ id, n })).sort((a, b) => nameOf(a.id).localeCompare(nameOf(b.id), 'pt'));
   itemTiles = sorted.map(({ id, n }) => {
     const b = document.createElement('button');
@@ -382,9 +422,7 @@ function buildItems() {
     b.setAttribute('aria-label', nameOf(id));
     b.dataset.id = id;
     const i = document.createElement('i');
-    i.style.backgroundImage = `url(${url})`;
-    i.style.backgroundSize = `${index.cols * px}px ${rows * px}px`;
-    i.style.backgroundPosition = `${-(n % index.cols) * px}px ${-Math.floor(n / index.cols) * px}px`;
+    atlasCell(i, n, px);
     b.append(i);
     byId.get(id).tile = b;
     grid.append(b);
@@ -428,6 +466,7 @@ function artTile(id) {
 }
 
 function showLibrary() {
+  if (lib.hidden) return;
   const list = $('lib-list');
   const q = normalize($('lib-q').value);
   list.textContent = '';
@@ -450,7 +489,7 @@ function showLibrary() {
       shown += on;
     }
     if (!shown) list.insertAdjacentHTML('beforeend', '<p class="lib-empty">Nenhum item com esse nome.</p>');
-    $('lib-foot').textContent = 'Clique para pôr o código no texto. Escreva um nome antes dele para sair na tábua.';
+    $('lib-foot').textContent = 'Clique: código no cursor. Shift+clique: mais de um.';
   } else {
     let any = false;
     for (const g of index.groups) {
@@ -477,7 +516,7 @@ function showLibrary() {
       list.append(sec);
     }
     if (!any) list.insertAdjacentHTML('beforeend', '<p class="lib-empty">Nenhuma arte com esse nome.</p>');
-    $('lib-foot').textContent = 'Artes feitas para o servidor. Clique para pôr o código no texto.';
+    $('lib-foot').textContent = 'Artes do servidor. Placa inteira = só o código.';
   }
   if (current) markLibrary(current);
 }
@@ -487,7 +526,28 @@ $('tab-arts').addEventListener('click', () => { tab = 'arts'; showLibrary(); });
 $('lib-q').addEventListener('input', showLibrary);
 $('lib-list').addEventListener('click', (e) => {
   const b = e.target.closest('[data-id]');
-  if (b) useCode(b.dataset.id);
+  if (!b) return;
+  useCode(b.dataset.id);
+  if (!e.shiftKey) openLibrary(false);
+});
+
+// A gaveta: fechada ate o clique; a grade de itens so e montada na primeira abertura.
+const lib = $('lib');
+function openLibrary(open, which) {
+  if (which) tab = which;
+  lib.hidden = !open;
+  $('lib-open').setAttribute('aria-expanded', String(open));
+  if (open) {
+    closeSuggest();
+    showLibrary();
+    $('lib-q').focus();
+  } else if (document.activeElement && lib.contains(document.activeElement)) ta.focus();
+}
+$('lib-open').addEventListener('click', () => openLibrary(lib.hidden));
+$('lib-close').addEventListener('click', () => openLibrary(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !lib.hidden) openLibrary(false); });
+document.addEventListener('pointerdown', (e) => {
+  if (!lib.hidden && !lib.contains(e.target) && !e.target.closest('#lib-open')) openLibrary(false);
 });
 
 // ---- dicas ----
@@ -508,6 +568,173 @@ document.addEventListener('mouseover', (e) => {
     tip.style.top = `${r.bottom + 6 + t.height > innerHeight ? r.top - t.height - 6 : r.bottom + 6}px`;
   }, tip.hidden ? 350 : 0);
 });
+
+// ---- autocompletar: ":" + nome abre a lista de icones no cursor ----
+
+const ac = $('ac');
+const QUERY = /:([A-Za-zÀ-ÿ][^:<>\n%]{0,40})$/;
+let searchList = [];
+let acRows = [];
+let acSel = 0;
+let acStart = -1;
+let acDismissed = -1;
+
+// Melhor chave de cada icone para a busca: igual, comeca com, contem (3+ letras). Itens antes de artes.
+function search(q, max) {
+  const hits = [];
+  for (const e of searchList) {
+    let best = null;
+    for (const key of e.keys) {
+      const score = key === q ? 0 : key.startsWith(q) ? 1 : q.length >= 3 && key.includes(q) ? 2 : 9;
+      if (score < 9 && (!best || score < best.score || (score === best.score && key.length < best.key.length))) best = { score, key };
+    }
+    if (best) hits.push({ id: e.id, art: e.art, ...best });
+  }
+  hits.sort((a, b) => a.score - b.score || a.art - b.art || a.key.length - b.key.length);
+  return hits.slice(0, max);
+}
+
+function closeSuggest() {
+  ac.hidden = true;
+  acRows = [];
+  acStart = -1;
+}
+
+function suggest() {
+  if (!index || !lib.hidden || document.activeElement !== ta || ta.selectionStart !== ta.selectionEnd) return closeSuggest();
+  const at = ta.selectionEnd;
+  const m = QUERY.exec(ta.value.slice(Math.max(0, at - 42), at));
+  if (!m) { acDismissed = -1; return closeSuggest(); }
+  const start = at - m[0].length;
+  if (start === acDismissed) return closeSuggest();
+  const hits = search(normalize(m[1]), 8);
+  if (!hits.length) return closeSuggest();
+  if (start !== acStart) acSel = 0;
+  acStart = start;
+  acRows = hits;
+  acSel = Math.min(acSel, hits.length - 1);
+  ac.textContent = '';
+  hits.forEach((h, n) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ac-row';
+    b.setAttribute('role', 'option');
+    b.setAttribute('aria-selected', String(n === acSel));
+    b.tabIndex = -1;
+    const icon = document.createElement('i');
+    const info = byId.get(h.id);
+    if (h.art) { icon.className = 'art'; icon.textContent = 'arte'; } else atlasCell(icon, info.n, 28);
+    const name = document.createElement('span');
+    name.textContent = info.name || h.id;
+    const code = document.createElement('code');
+    code.textContent = `:${h.key}:`;
+    b.append(icon, name, code);
+    b.addEventListener('pointerdown', (e) => e.preventDefault());
+    b.addEventListener('click', () => { acSel = n; acceptSuggest(); });
+    ac.append(b);
+  });
+  ac.insertAdjacentHTML('beforeend', '<p class="ac-foot">↑↓ · Enter/Tab · Esc</p>');
+  ac.hidden = false;
+  placeSuggest();
+}
+
+function placeSuggest() {
+  const mark = document.getElementById('caret-at');
+  if (ac.hidden || !mark) return;
+  const field = ac.parentElement.getBoundingClientRect();
+  const r = mark.getBoundingClientRect();
+  const w = ac.offsetWidth;
+  const h = ac.offsetHeight;
+  ac.style.left = `${Math.max(4, Math.min(field.width - w - 4, r.left - field.left - 10))}px`;
+  const below = r.bottom - field.top + 6;
+  ac.style.top = `${below + h > field.height - 4 && r.top - field.top > h + 6 ? r.top - field.top - h - 6 : below}px`;
+}
+
+function acceptSuggest() {
+  const h = acRows[acSel];
+  if (!h) return;
+  const start = acStart;
+  closeSuggest();
+  const end = ta.selectionEnd;
+  const close = ta.value[end] === ':' ? 1 : 0;
+  replaceRange(start, end + close, `:${h.key}:`);
+}
+
+ta.addEventListener('keydown', (e) => {
+  if (ac.hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    acSel = (acSel + (e.key === 'ArrowDown' ? 1 : acRows.length - 1)) % acRows.length;
+    ac.querySelectorAll('.ac-row').forEach((b, n) => b.setAttribute('aria-selected', String(n === acSel)));
+  } else if (e.key === 'Enter' || e.key === 'Tab') acceptSuggest();
+  else if (e.key === 'Escape') { acDismissed = acStart; closeSuggest(); }
+  else return;
+  e.preventDefault();
+});
+
+// ---- colinha: o que o plugin e o jogo entendem; clique poe o exemplo no cursor ----
+
+const CHEAT = [
+  ['Servidor', [
+    { code: 'Mel :mel:', text: 'placa inteira = ícone; nome na tábua e ao mirar' },
+    { code: ':mel:', text: 'só o ícone' },
+    { code: '<size=12>:mel:', text: 'lado do ícone, 1–18', pick: '12' },
+    { code: ':mel 50%:', text: 'brilho do ícone', pick: '50' },
+    { code: ':mapa g:', text: 'artes do servidor', arts: true },
+    { code: '{u}', text: 'sem luz: brilha no escuro' },
+    { code: 'texto > 50', text: 'vira coladas com >>, sozinho', none: true },
+  ]],
+  ['Jogo', [
+    { code: '<#f80>', text: 'cor; 3 dígitos bastam', pick: 'f80' },
+    { code: '<size=4>', text: 'tamanho da letra; tábua 20 × 10', pick: '4' },
+    { code: 'Enter', text: 'quebra linha', insert: '\n' },
+    { code: '<b> <i> <u> <s>', text: 'negrito, itálico, sublinhado, riscado', wrap: ['<i>', '</i>'] },
+    { code: '<mark=#000000aa>', text: 'faixa atrás; 6 ou 8 dígitos', wrap: ['<mark=#000000aa>', '</mark>'], pick: '000000aa' },
+    { code: '<alpha=#80>', text: 'transparência', pick: '80' },
+    { code: '<rotate=15>', text: 'gira cada letra', pick: '15' },
+    { code: '<sup> <sub>', text: 'sobrescrito, subscrito', wrap: ['<sup>', '</sup>'] },
+    { code: '<line-height=60%>', text: 'espaço entre linhas', pick: '60' },
+    { code: '<cspace=0.5>', text: 'espaço entre letras', pick: '0.5' },
+    { code: '🔥 ⚔ ✨', text: 'emoji sai na placa', insert: '🔥' },
+  ]],
+];
+
+function buildCheat() {
+  const box = $('cheat');
+  for (const [title, rows] of CHEAT) {
+    const h = document.createElement('h3');
+    h.textContent = title;
+    box.append(h);
+    for (const row of rows) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cheat-row';
+      const code = document.createElement('code');
+      code.textContent = row.code;
+      const text = document.createElement('span');
+      text.textContent = row.text;
+      b.append(code, text);
+      if (row.none) b.disabled = true;
+      b.addEventListener('click', () => {
+        if (row.arts) return openLibrary(true, 'arts');
+        if (row.wrap) return wrap(row.wrap[0], row.wrap[1], row.pick);
+        insertAtCaret(row.insert ?? row.code, row.pick);
+      });
+      box.append(b);
+    }
+  }
+  box.insertAdjacentHTML('beforeend', '<p class="cheat-note">Ícone só vale com a placa só nele, até 50. Digite <code>:</code> + nome para procurar.</p>');
+}
+
+const CHEAT_KEY = 'jahmaica.placa.colinha';
+function showCheat(open) {
+  $('cheat').hidden = !open;
+  $('cheat-toggle').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem(CHEAT_KEY, open ? '1' : '0'); } catch {}
+  placeSuggest();
+}
+$('cheat-toggle').addEventListener('click', () => showCheat($('cheat').hidden));
+buildCheat();
+try { showCheat(localStorage.getItem(CHEAT_KEY) !== '0'); } catch { showCheat(true); }
 
 // ---- inicio ----
 
@@ -545,10 +772,15 @@ async function loadIndex() {
     const list = aliases.get(id) ?? [];
     byId.set(id, { name, aliases: list, hay: `${id} ${normalize(name)} ${list.join(' ')}`, tile: null });
   };
-  index.items.forEach(([id, name]) => add(id, name));
+  index.items.forEach(([id, name], n) => { add(id, name); byId.get(id).n = n; });
   index.groups.forEach((g) => g.ids.forEach((id) => {
     add(id, index.names[id] ?? '');
     byId.get(id).art = true;
+  }));
+  searchList = [...byId].map(([id, e]) => ({
+    id,
+    art: e.art ? 1 : 0,
+    keys: [...new Set([id, ...e.aliases, normalize(e.name || '')].filter(Boolean))],
   }));
   const arts = index.groups.reduce((n, g) => n + g.ids.length, 0);
   $('count-items').textContent = index.items.length;
