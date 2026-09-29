@@ -940,7 +940,7 @@ const CHEAT = [
     { code: '<size=12>:mel:', text: 'lado do ícone, 1–18', pick: '12' },
     { code: ':mel 50%:', text: 'brilho do ícone', pick: '50' },
     { code: ':mapa g:', text: 'artes do servidor', arts: true },
-    { code: '{u}', text: 'sem luz: brilha no escuro' },
+    { code: '{u}', text: 'brilho: o texto brilha no escuro' },
     { code: 'texto > 50', text: 'vira coladas com >>, sozinho', none: true },
   ]],
   ['Jogo', [
