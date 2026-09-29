@@ -407,7 +407,7 @@ function drawText(ctx, result, unlit) {
 function textScene(source, opts) {
   var parsed = parse(source, opts.macros), result = autoSize(parsed.items);
   request(parsed.items);
-  return { ink: inkOf(result), paint: function (board, glow) { drawText(board, result, false); drawText(glow, result, true); } };
+  return { ink: inkOf(result), size: result.size, paint: function (board, glow) { drawText(board, result, false); drawText(glow, result, true); } };
 }
 
 // ---- a tabua: textura de baixa resolucao sem suavizar, como as do jogo ----
@@ -531,7 +531,8 @@ function render(canvas, text, opts) {
   retarget(canvas, st, false);
   var ink = st.scene.ink;
   return { overflow: !!ink && (ink.x0 < -BOARD_W / 2 || ink.x1 > BOARD_W / 2 || ink.y0 < -BOARD_H / 2 || ink.y1 > BOARD_H / 2),
-           clipped: st.clipped, width: ink ? (ink.x1 - ink.x0) * 0.05 : 0, height: ink ? (ink.y1 - ink.y0) * 0.05 : 0 };
+           clipped: st.clipped, width: ink ? (ink.x1 - ink.x0) * 0.05 : 0, height: ink ? (ink.y1 - ink.y0) * 0.05 : 0,
+           size: st.scene.size };                         // size: o tamanho que o auto-size escolheu
 }
 
 // ---- fontes: redesenha quando chegam (emoji vem em fatias por faixa de unicode) ----

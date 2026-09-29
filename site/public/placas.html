@@ -25,28 +25,49 @@
 
     <section class="work">
       <div class="editor panel">
-        <div class="toolbar" role="toolbar" aria-label="Inserir no texto">
+        <div class="toolbar" role="toolbar" aria-label="Formatar e inserir">
+          <div class="modes" role="tablist" aria-label="Modo do editor">
+            <button type="button" role="tab" id="mode-rich" aria-selected="true" data-tip="Escreva e formate vendo o resultado">Visual</button>
+            <button type="button" role="tab" id="mode-code" aria-selected="false" data-tip="O código com as tags, como vai para o jogo">Código</button>
+          </div>
+          <span class="bar-sep"></span>
           <button type="button" class="bar-btn bar-lib" id="lib-open" aria-expanded="false" aria-controls="lib" data-tip="Ícones de itens e artes do servidor. Atalho: digite : e o nome">
             <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.2"/></svg>
             Ícones
           </button>
           <span class="bar-sep"></span>
-          <label class="bar-btn bar-color" data-tip="Cor a partir do cursor: &lt;#rgb&gt;">
-            <input id="color" type="color" value="#ff8800">
-            <span>Cor</span>
-          </label>
-          <button type="button" class="bar-btn" data-insert="size" data-tip="Tamanho da letra (tábua = 20 × 10)">Tamanho</button>
-          <button type="button" class="bar-btn" data-insert="unlit" data-tip="{u}: sem luz, brilha no escuro">Sem luz</button>
-          <button type="button" class="bar-btn" data-insert="mark" data-tip="Faixa de cor atrás do texto">Faixa</button>
+          <div class="fmt" id="fmt">
+            <button type="button" class="bar-btn" data-pop="color" aria-haspopup="true" aria-expanded="false" data-tip="Cor do texto escolhido">
+              <span class="swatch" id="color-swatch"></span>Cor<span class="caret-down" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="bar-btn" data-pop="size" aria-haspopup="true" aria-expanded="false" data-tip="Tamanho da letra. Automático: a placa encaixa o texto sozinha">
+              Tamanho <b class="bar-val" id="size-val">auto</b><span class="caret-down" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="bar-btn" data-pop="mark" aria-haspopup="true" aria-expanded="false" data-tip="Faixa de cor atrás do texto">
+              <span class="swatch swatch-mark" id="mark-swatch"></span>Faixa<span class="caret-down" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="bar-btn" data-toggle="l" aria-pressed="false" data-tip="Sem luz: o texto brilha no escuro ({u})">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.4"/><path d="M10 1.8v2.6M10 15.6v2.6M1.8 10h2.6M15.6 10h2.6M4.2 4.2l1.8 1.8M14 14l1.8 1.8M4.2 15.8 6 14M14 6l1.8-1.8"/></svg>
+              Sem luz
+            </button>
+            <span class="bar-group">
+              <button type="button" class="bar-btn bar-icon" data-toggle="i" aria-pressed="false" aria-label="Itálico" data-tip="Itálico (Ctrl+I)"><i>I</i></button>
+              <button type="button" class="bar-btn bar-icon" data-toggle="u" aria-pressed="false" aria-label="Sublinhado" data-tip="Sublinhado (Ctrl+U)"><u>U</u></button>
+              <button type="button" class="bar-btn bar-icon" data-toggle="s" aria-pressed="false" aria-label="Riscado" data-tip="Riscado"><s>S</s></button>
+            </span>
+          </div>
           <span class="bar-gap"></span>
           <span id="catalog-state" class="catalog-state"></span>
           <button type="button" class="bar-btn" id="cheat-toggle" aria-expanded="true" aria-controls="cheat" data-tip="Mostra ou esconde a colinha">Colinha</button>
           <button type="button" class="bar-btn" id="share" data-tip="Copia um link que abre esta placa">Link</button>
-          <button type="button" class="bar-btn" id="clear" data-tip="Apaga o texto">Limpar</button>
+          <button type="button" class="bar-btn" id="clear" data-tip="Apaga o texto (Ctrl+Z desfaz)">Limpar</button>
         </div>
+        <div id="pop" class="pop" role="dialog" hidden></div>
 
         <div class="editor-body">
           <div class="field">
+            <div id="rich" class="rich" aria-label="Texto da placa" aria-autocomplete="list" aria-controls="ac"
+              data-placeholder="Escreva a placa. Selecione um trecho para dar cor, tamanho ou brilho. Digite : para um ícone."></div>
             <pre id="mirror" class="mirror" aria-hidden="true"></pre>
             <textarea id="text" spellcheck="false" autocomplete="off" aria-label="Texto da placa" aria-autocomplete="list" aria-controls="ac"
               placeholder="Escreva a placa. Enter quebra linha. :mel: vira ícone."></textarea>
