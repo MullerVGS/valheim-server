@@ -2,7 +2,7 @@
 // uma com o estilo que o jogo daria a ela. parse le o codigo que se cola no jogo; serialize escreve de
 // volta o codigo mais curto que da o mesmo resultado. Sem DOM: os testes rodam no Node.
 //
-// Estilo: { c: cor hex (3, 4, 6 ou 8 digitos), z: tamanho da letra, l: sem luz, m: faixa (6 ou 8 digitos),
+// Estilo: { c: cor hex (3, 4, 6 ou 8 digitos), z: tamanho da letra, l: brilho (sem luz), m: faixa (6 ou 8 digitos),
 // i: italico, u: sublinhado, s: riscado }. Chave ausente = padrao da placa.
 // Pecas: { t: 'c', ch } letra (um code point), { t: 'n' } quebra de linha, { t: 'x', kind, raw } o que o
 // editor mostra como chip: 'icon' (:mel:), 'macro' ({abreviacao}) ou 'tag' (tag do jogo sem botao aqui).

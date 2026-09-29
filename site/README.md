@@ -59,7 +59,7 @@ deploy. `signs.mjs` confere tamanho e data a cada pedido (no máximo a cada 5 s)
   (`<#ff8800>` → `<#f80>`, texto da abreviação → `{u}`). O servidor usa o mesmo leitor de catálogo. Mudou lá,
   muda aqui: `node --test test/*.test.mjs` usa os catálogos de brinquedo dos testes do plugin.
 - `public/signrich.js` + `public/richedit.js`: o editor visual (padrão; a aba Código mostra as tags). O texto
-  vira uma fila de peças com estilo (cor, tamanho, sem luz, faixa, itálico, sublinhado, riscado) e volta como o
+  vira uma fila de peças com estilo (cor, tamanho, brilho, faixa, itálico, sublinhado, riscado) e volta como o
   código mais curto que dá o mesmo resultado; ícone, abreviação e tag sem botão viram chip. O navegador não mexe
   no HTML: cada tecla vira troca nas peças (só a composição de acento passa por ele e é lida de volta). Botão
   com trecho escolhido muda o trecho; com o cursor parado, vale para o que for digitado. Copiar leva o código
