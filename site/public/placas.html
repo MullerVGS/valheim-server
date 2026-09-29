@@ -17,26 +17,66 @@
 </head>
 <body class="placas">
   <main class="studio">
-    <header class="studio-head">
-      <h1>Placas</h1>
-      <p>Escreva, veja como a placa fica no jogo e cole na ordem.</p>
-      <span id="catalog-state" class="catalog-state"></span>
-    </header>
-
-    <section class="lib panel" aria-label="Ícones e artes">
-      <div class="lib-tabs" role="tablist">
-        <button type="button" role="tab" id="tab-items" aria-selected="true" aria-controls="lib-list">Itens <span class="count" id="count-items"></span></button>
-        <button type="button" role="tab" id="tab-arts" aria-selected="false" aria-controls="lib-list">Artes <span class="count" id="count-arts"></span></button>
-      </div>
-      <label class="lib-search">
-        <span class="sr-only">Procurar</span>
-        <input id="lib-q" type="search" placeholder="Procurar item…" autocomplete="off" spellcheck="false">
-      </label>
-      <div id="lib-list" class="lib-list" role="tabpanel" aria-labelledby="tab-items"></div>
-      <p class="lib-foot" id="lib-foot">Clique para pôr o código no texto.</p>
+    <section class="steps panel" aria-label="Como pôr no jogo">
+      <h2>No jogo</h2>
+      <ol id="steps" class="step-list"></ol>
+      <p id="steps-done" class="steps-note" hidden></p>
     </section>
 
     <section class="work">
+      <div class="editor panel">
+        <div class="toolbar" role="toolbar" aria-label="Inserir no texto">
+          <button type="button" class="bar-btn bar-lib" id="lib-open" aria-expanded="false" aria-controls="lib" data-tip="Ícones de itens e artes do servidor. Atalho: digite : e o nome">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.2"/></svg>
+            Ícones
+          </button>
+          <span class="bar-sep"></span>
+          <label class="bar-btn bar-color" data-tip="Cor a partir do cursor: &lt;#rgb&gt;">
+            <input id="color" type="color" value="#ff8800">
+            <span>Cor</span>
+          </label>
+          <button type="button" class="bar-btn" data-insert="size" data-tip="Tamanho da letra (tábua = 20 × 10)">Tamanho</button>
+          <button type="button" class="bar-btn" data-insert="unlit" data-tip="{u}: sem luz, brilha no escuro">Sem luz</button>
+          <button type="button" class="bar-btn" data-insert="mark" data-tip="Faixa de cor atrás do texto">Faixa</button>
+          <span class="bar-gap"></span>
+          <span id="catalog-state" class="catalog-state"></span>
+          <button type="button" class="bar-btn" id="cheat-toggle" aria-expanded="true" aria-controls="cheat" data-tip="Mostra ou esconde a colinha">Colinha</button>
+          <button type="button" class="bar-btn" id="share" data-tip="Copia um link que abre esta placa">Link</button>
+          <button type="button" class="bar-btn" id="clear" data-tip="Apaga o texto">Limpar</button>
+        </div>
+
+        <div class="editor-body">
+          <div class="field">
+            <pre id="mirror" class="mirror" aria-hidden="true"></pre>
+            <textarea id="text" spellcheck="false" autocomplete="off" aria-label="Texto da placa" aria-autocomplete="list" aria-controls="ac"
+              placeholder="Escreva a placa. Enter quebra linha. :mel: vira ícone."></textarea>
+            <div id="ac" class="ac" role="listbox" aria-label="Ícones" hidden></div>
+          </div>
+          <aside id="cheat" class="cheat" aria-label="Colinha"></aside>
+
+          <section id="lib" class="lib" aria-label="Ícones e artes" hidden>
+            <div class="lib-head">
+              <div class="lib-tabs" role="tablist">
+                <button type="button" role="tab" id="tab-items" aria-selected="true" aria-controls="lib-list">Itens <span class="count" id="count-items"></span></button>
+                <button type="button" role="tab" id="tab-arts" aria-selected="false" aria-controls="lib-list">Artes <span class="count" id="count-arts"></span></button>
+              </div>
+              <button type="button" class="lib-close" id="lib-close" aria-label="Fechar">×</button>
+            </div>
+            <label class="lib-search">
+              <span class="sr-only">Procurar</span>
+              <input id="lib-q" type="search" placeholder="Procurar item…" autocomplete="off" spellcheck="false">
+            </label>
+            <div id="lib-list" class="lib-list" role="tabpanel" aria-labelledby="tab-items"></div>
+            <p class="lib-foot" id="lib-foot"></p>
+          </section>
+        </div>
+
+        <div class="editor-foot">
+          <span id="stats"></span>
+          <span id="problems" class="problems"></span>
+        </div>
+      </div>
+
       <div class="viewer panel">
         <canvas id="sign" aria-label="Como a placa fica no jogo"></canvas>
         <div class="viewer-top">
@@ -54,36 +94,6 @@
         </div>
         <p id="hover" class="hover-line" hidden></p>
       </div>
-
-      <div class="editor panel">
-        <div class="toolbar" role="toolbar" aria-label="Inserir no texto">
-          <label class="bar-btn bar-color" data-tip="Cor do texto a partir daqui: &lt;#rgb&gt;">
-            <input id="color" type="color" value="#ff8800">
-            <span>Cor</span>
-          </label>
-          <button type="button" class="bar-btn" data-insert="size" data-tip="Tamanho da letra em unidades da tábua (a tábua tem 20 × 10)">Tamanho</button>
-          <button type="button" class="bar-btn" data-insert="unlit" data-tip="{u}: sem iluminação, brilha no escuro como os ícones">Brilho</button>
-          <button type="button" class="bar-btn" data-insert="mark" data-tip="Faixa de cor atrás do texto (sempre meio transparente)">Faixa</button>
-          <span class="bar-gap"></span>
-          <button type="button" class="bar-btn" id="share" data-tip="Copia um link que abre esta placa">Link</button>
-          <button type="button" class="bar-btn" id="clear" data-tip="Apaga o texto">Limpar</button>
-        </div>
-        <div class="field">
-          <pre id="mirror" class="mirror" aria-hidden="true"></pre>
-          <textarea id="text" spellcheck="false" autocomplete="off" aria-label="Texto da placa"
-            placeholder="Escreva o texto da placa. Enter quebra a linha. Tags como &lt;#f80&gt; e &lt;size=6&gt; funcionam, e :mel: vira o ícone do item."></textarea>
-        </div>
-        <div class="editor-foot">
-          <span id="stats"></span>
-          <span id="problems" class="problems"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="steps panel" aria-label="Como pôr no jogo">
-      <h2>Passo a passo</h2>
-      <ol id="steps" class="step-list"></ol>
-      <p id="steps-done" class="steps-note" hidden></p>
     </section>
   </main>
   <div id="tip" class="tip" role="tooltip" hidden></div>
