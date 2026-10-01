@@ -11,6 +11,7 @@ using ValheimMetrics.Exposition;
 using ValheimMetrics.Fire;
 using ValheimMetrics.Map;
 using ValheimMetrics.Signs;
+using ValheimMetrics.Summons;
 using ValheimMetrics.Traffic;
 using ValheimMetrics.Tuning;
 
@@ -20,7 +21,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.17.0";
+        public const string Version = "0.18.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -57,6 +58,7 @@ namespace ValheimMetrics
                 new AccessControl(),
                 new ChestMarks(),
                 new FireFuel(),
+                new SummonNames(),
                 new TrafficCollector(),
                 new TuningCollector(),
                 new MapCollector(),
@@ -109,6 +111,7 @@ namespace ValheimMetrics
             AccessControl.OnFrame();
             ChestMarks.OnFrame(now);
             FireFuel.OnFrame(now);
+            SummonNames.OnFrame(now);
             OwnershipCollector.OnFrame(now);
             MapCollector.OnFrame();
             if (now < _nextSnapshot)

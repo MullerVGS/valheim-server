@@ -287,6 +287,20 @@ porque so pede um item de mesmo nome com espaco.
 - Devolucao pendente vive na memoria: restart perde ate 5 minutos de devolucao por fogo.
 - `valheim_fire_fuel_refunded_total` (unidades devolvidas), `_writes_total`, `_relit_total`, `_pending`.
 
+### Nomes de invocacao (opt-in)
+
+`VALHEIM_SUMMON_NAMES=1` no `.env`: esqueleto do Cajado dos Mortos (e qualquer criatura que nasce
+domada com nome sorteado) volta com o nome que o jogador deu, sem mod no cliente. Vazio = jogo.
+
+- O jogo sorteia um nome a cada invocacao. O servidor guarda, por personagem, os nomes que ele deu ao
+  renomear (ate 30) em `summon-names.tsv`, ao lado do mundo, e troca o sorteado pelo primeiro nome
+  guardado que nenhuma invocacao viva dele usa: o novo herda o nome de quem sumiu.
+- Renomear de novo troca o nome antigo pelo novo na lista. Com todos os nomes em uso, a invocacao nova
+  fica com o sorteado ate ser renomeada.
+- Quem invocou fica na chave de ZDO `valheim-server.summoner` (o `follow` do jogo esvazia quando o
+  esqueleto fica parado). A escrita vai com revisao 1000 a frente, como no combustivel de fogo.
+- `valheim_summon_names_live`, `_players`, `_renamed_total`, `_learned_total`.
+
 ### Mapa (opt-in)
 
 O Geomap do Grafana desenha pontos sobre tiles XYZ em Web Mercator, e o plugin fala essa lingua: o

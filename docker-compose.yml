@@ -103,6 +103,10 @@ services:
       # vezes menos (2..100), sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_FIRE_FUEL_FACTOR: ${VALHEIM_FIRE_FUEL_FACTOR:-}
 
+      # Nomes de invocacao (exige BEPINEX=true): 1 = esqueleto do cajado volta com o nome que o jogador
+      # deu, sem mod no cliente. Vazio = jogo. Ver README.
+      VALHEIM_SUMMON_NAMES: ${VALHEIM_SUMMON_NAMES:-}
+
       # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin grava os dados do site
       # (terreno, explorado das mesas, construcoes). Vazio = sem arquivos; as metricas saem igual. Ver README.
       VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}
