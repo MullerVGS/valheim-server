@@ -29,6 +29,8 @@ namespace ValheimMetrics.ChunkLoader
         static ZDOID _anchor = ZDOID.None;
         static Vector3 _anchorPos;
         static Vector3 _parked;
+        static bool _parkedKnown;
+        static int _setterLogs;
         static bool _active;
         static long _moves;
 
@@ -46,8 +48,47 @@ namespace ValheimMetrics.ChunkLoader
             if (!Patcher.Patch(harmony, typeof(ZDO), "Deserialize", new[] { typeof(ZPackage) }, typeof(ChunkLoader),
                     postfix: nameof(DeserializePostfix), tag: "chunk_loader"))
                 return;
+            // O dedicado regrava o proprio ponto durante o jogo; sem isso a gravacao dele venceria a nossa
+            // em parte dos frames.
+            if (!Patcher.Patch(harmony, typeof(ZNet), "SetReferencePosition", new[] { typeof(Vector3) }, typeof(ChunkLoader),
+                    prefix: nameof(SetReferencePositionPrefix), tag: "chunk_loader"))
+                return;
             _enabled = true;
             Plugin.Log.LogInfo("Chunk loader ligado: placa escrita \"chunkloader\" mantem a area carregada.");
+        }
+
+        // Guarda o que o jogo quer (para devolver sem placa) e, com placa, troca pelo ponto dela.
+        static void SetReferencePositionPrefix(ref Vector3 __0)
+        {
+            if (_inside)
+                return;
+            if (!_parkedKnown || __0 != _parked)
+            {
+                if (_setterLogs < 5)
+                {
+                    _setterLogs++;
+                    Plugin.Log.LogInfo($"Chunk loader: o jogo pos o ponto do servidor em ({__0.x:0}, {__0.z:0}):\n{Environment.StackTrace}");
+                }
+                _parked = __0;
+                _parkedKnown = true;
+            }
+            if (_active)
+                __0 = _anchorPos;
+        }
+
+        static bool _inside;
+
+        static void Point(Vector3 pos)
+        {
+            _inside = true;
+            try
+            {
+                ZNet.instance.SetReferencePosition(pos);
+            }
+            finally
+            {
+                _inside = false;
+            }
         }
 
         // Roda dentro do RPC que recebe ZDO de cliente: so anota, a leitura acontece no frame seguinte.
@@ -106,7 +147,7 @@ namespace ValheimMetrics.ChunkLoader
             }
 
             if (_active)
-                ZNet.instance.SetReferencePosition(_anchorPos);
+                Point(_anchorPos);
         }
 
         static void Observe(ZDO zdo)
@@ -157,8 +198,11 @@ namespace ValheimMetrics.ChunkLoader
             if (_book.TryPick(out var anchor))
             {
                 var pos = ZDOMan.instance.GetZDO(anchor).GetPosition();
-                if (!_active)
+                if (!_active && !_parkedKnown)
+                {
                     _parked = ZNet.instance.GetReferencePosition();
+                    _parkedKnown = true;
+                }
                 if (!_active || anchor != _anchor)
                 {
                     _moves++;
@@ -173,7 +217,7 @@ namespace ValheimMetrics.ChunkLoader
             {
                 _active = false;
                 _anchor = ZDOID.None;
-                ZNet.instance.SetReferencePosition(_parked);
+                Point(_parked);
                 Plugin.Log.LogInfo($"Chunk loader sem placa: o ponto do servidor volta a ({_parked.x:0}, {_parked.z:0}).");
             }
         }
