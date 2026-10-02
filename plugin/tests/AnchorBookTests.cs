@@ -72,4 +72,21 @@ public class AnchorBookTests
         Assert.True(_book.TryPick(out var id));
         Assert.Equal(1, id);
     }
+
+    [Fact]
+    public void ActiveSignGetsUnderlinedOnce()
+    {
+        Assert.Equal("<u>Chunk Loader</u>", AnchorBook<int>.Mark("Chunk Loader", true));
+        Assert.Null(AnchorBook<int>.Mark("<u>Chunk Loader</u>", true));
+        Assert.True(AnchorBook<int>.IsMarker("<u>Chunk Loader</u>"));
+    }
+
+    [Fact]
+    public void InactiveSignLosesOnlyOurUnderline()
+    {
+        Assert.Equal("chunkloader", AnchorBook<int>.Mark("<u>chunkloader</u>", false));
+        Assert.Equal("<b>chunkloader</b>", AnchorBook<int>.Mark("<u><b>chunkloader</b></u>", false));
+        Assert.Null(AnchorBook<int>.Mark("chunkloader", false));
+        Assert.Null(AnchorBook<int>.Mark("<u>x", false));
+    }
 }

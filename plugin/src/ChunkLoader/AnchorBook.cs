@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -57,6 +58,25 @@ namespace ValheimMetrics.ChunkLoader
         }
 
         public void Forget(TId id) => _stamps.Remove(id);
+
+        // A placa que esta segurando a area fica sublinhada; as outras voltam ao texto de quem escreveu.
+        // null = o texto ja esta certo.
+        public static string Mark(string text, bool active)
+        {
+            if (text == null)
+                return null;
+            bool underlined = text.StartsWith(UnderlineOpen, StringComparison.Ordinal)
+                && text.EndsWith(UnderlineClose, StringComparison.Ordinal)
+                && text.Length >= UnderlineOpen.Length + UnderlineClose.Length;
+            if (active == underlined)
+                return null;
+            return active
+                ? UnderlineOpen + text + UnderlineClose
+                : text.Substring(UnderlineOpen.Length, text.Length - UnderlineOpen.Length - UnderlineClose.Length);
+        }
+
+        const string UnderlineOpen = "<u>";
+        const string UnderlineClose = "</u>";
 
         public bool TryPick(out TId id)
         {

@@ -77,6 +77,23 @@ namespace ValheimMetrics.ChunkLoader
         }
 
         static bool _inside;
+        static ZDOID _lastAnchor = ZDOID.None;
+
+        // Mostra no jogo qual placa esta valendo. A placa que perdeu a vez pode nem ser mais "chunkloader"
+        // (reescrita), entao so tira o sublinhado se o texto ainda for o marcador.
+        static void Underline(ZDO zdo, bool active)
+        {
+            if (zdo == null || !zdo.IsValid())
+                return;
+            var text = zdo.GetString(ZDOVars.s_text);
+            if (!AnchorBook<ZDOID>.IsMarker(text))
+                return;
+            var next = AnchorBook<ZDOID>.Mark(text, active);
+            if (next == null)
+                return;
+            zdo.Set(ZDOVars.s_text, next);
+            Plugin.Log.LogInfo($"Chunk loader: placa em ({zdo.GetPosition().x:0}, {zdo.GetPosition().z:0}) {(active ? "sublinhada" : "sem sublinhado")}.");
+        }
 
         static void Point(Vector3 pos)
         {
@@ -195,7 +212,14 @@ namespace ValheimMetrics.ChunkLoader
             foreach (var id in _dead)
                 _book.Forget(id);
 
-            if (_book.TryPick(out var anchor))
+            bool picked = _book.TryPick(out var anchor);
+            foreach (var id in _book.Ids)
+                Underline(ZDOMan.instance.GetZDO(id), picked && id == anchor);
+            if (_lastAnchor != ZDOID.None && (!picked || _lastAnchor != anchor))
+                Underline(ZDOMan.instance.GetZDO(_lastAnchor), false);
+            _lastAnchor = picked ? anchor : ZDOID.None;
+
+            if (picked)
             {
                 var pos = ZDOMan.instance.GetZDO(anchor).GetPosition();
                 if (!_active && !_parkedKnown)

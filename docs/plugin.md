@@ -93,7 +93,7 @@ player gave earlier — up to 30 per character in `summon-names.tsv` next to the
 the 3×3 zones around it loaded and simulated with nobody nearby — animals breed, eggs hatch, fires burn.
 The game treats the dedicated server as a player standing still, parked outside the world (1e6, 1e6), so
 it simulates nothing on its own; this moves that point to the sign, and the game does the rest. One area at
-a time: the most recently written sign wins (its stamp lives in the sign, so it survives restarts); breaking
+a time: the most recently written sign wins and gets underlined (its stamp lives in the sign, so it survives restarts); breaking
 or rewriting it hands over to the previous one, or parks the server again. A player who walks in takes over the simulation and
 hands it back on leaving. Dropped items still need a workbench nearby to escape the 1 h cleanup.
 
