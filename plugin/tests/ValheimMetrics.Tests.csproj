@@ -17,6 +17,7 @@
     <Compile Include="../src/Signs/SignTextRules.cs" />
     <Compile Include="../src/Experience/LagReportText.cs" />
     <Compile Include="../src/Access/AccessBook.cs" />
+    <Compile Include="../src/ChunkLoader/AnchorBook.cs" />
     <Compile Include="../src/Access/AccessState.cs" />
     <Compile Include="../src/Chests/SlotMarks.cs" />
     <Compile Include="../src/Chests/MarkCodec.cs" />

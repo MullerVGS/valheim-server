@@ -7,6 +7,7 @@ import {
 } from './common.js';
 import { hiddenFor, hideIcon, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
 import { storeKey } from './world.js';
+import { bandAt, loadedArea, outline } from './loaded.js';
 
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
@@ -19,7 +20,7 @@ const PLAY_STEP_MS = 1400;
 // Recorte do par no cartao do portal: tamanho em px CSS e zoom.
 const PAIR_VIEW = { width: 272, height: 150, metersPerPixel: 1.2 };
 
-const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false, safe: false };
+const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false, safe: false, loaded: false };
 const HOME = { x: -44, z: -68, metersPerPixel: 3.2 };
 // Camadas e janela dos rastros ficam no navegador de quem olha.
 const PREFS_KEY = storeKey('map');
@@ -74,7 +75,7 @@ function hitAt(sx, sy) {
   const icon = [...hits].reverse().find((h) => Math.abs(h.sx - sx) <= Math.max(h.r, 14) && Math.abs(h.sy - sy) <= Math.max(h.r, 14));
   if (icon) return icon;
   const [wx, wz] = mapView.toWorld(sx, sy);
-  return pieceHit(wx, wz) ?? baseAreaHit(wx, wz);
+  return pieceHit(wx, wz) ?? baseAreaHit(wx, wz) ?? loadedHit(wx, wz);
 }
 
 // Construcao sob o ponteiro: a base a que ela pertence.
@@ -535,6 +536,155 @@ function baseAreaHit(wx, wz) {
   };
 }
 
+// ---------- area que o servidor mantem viva (chunk loader) ----------
+
+const LOADED_INK = 'rgba(18, 48, 60, 0.9)';
+const LOADED_ACTIVE = 'rgba(58, 138, 160, 0.32)';
+const LOADED_NEAR = 'rgba(58, 138, 160, 0.13)';
+let loadedCache = null;
+
+function loadedGeometry() {
+  const l = state?.loaded;
+  if (!l) return null;
+  const k = `${l.x}|${l.z}|${l.near}|${l.far}|${l.classic}`;
+  if (loadedCache?.k !== k) {
+    const area = loadedArea(l.x, l.z, l);
+    loadedCache = { k, area, near: outline(area.near), outer: outline([...area.near, ...area.distant]) };
+  }
+  return loadedCache;
+}
+
+// Retangulo de mundo (x0..x1, z0..z1) na tela: z cresce para cima.
+function screenRect(mv, x0, z0, x1, z1) {
+  const [ax, ay] = mv.toScreen(x0, z1);
+  const [bx, by] = mv.toScreen(x1, z0);
+  return [ax, ay, bx - ax, by - ay];
+}
+
+function strokeEdges(ctx, mv, edges) {
+  ctx.beginPath();
+  for (const [x0, z0, x1, z1] of edges) {
+    ctx.moveTo(...mv.toScreen(x0, z0));
+    ctx.lineTo(...mv.toScreen(x1, z1));
+  }
+  ctx.stroke();
+}
+
+// Tres faixas, como o jogo decide: simulado (o servidor e dono e roda a IA), carregado (terreno e
+// objetos existem, ninguem anda) e o anel dos objetos distantes; grade de zonas de perto.
+function drawLoaded(ctx, mv) {
+  if (!layers.loaded || day) return;
+  const g = loadedGeometry();
+  if (!g) return;
+  const { area } = g;
+  const l = state.loaded;
+  const mpp = mv.view.metersPerPixel;
+  const half = 32;
+  ctx.save();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = LOADED_NEAR;
+  ctx.beginPath();
+  for (const [zx, zz] of area.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
+  ctx.fill();
+  ctx.clip();
+
+  const cx = area.center[0] * 64;
+  const cz = area.center[1] * 64;
+  const h = area.active.half;
+  const square = () => {
+    ctx.beginPath();
+    ctx.rect(...screenRect(mv, cx - h, cz - h, cx + h, cz + h));
+  };
+  const circle = () => {
+    const [sx, sy] = mv.toScreen(cx, cz);
+    ctx.beginPath();
+    ctx.arc(sx, sy, area.active.radius / mpp, 0, Math.PI * 2);
+  };
+  ctx.save();
+  if (area.active.radius) {
+    circle();
+    ctx.clip();
+  }
+  square();
+  ctx.fillStyle = LOADED_ACTIVE;
+  ctx.fill();
+  ctx.strokeStyle = LOADED_INK;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+  if (area.active.radius) {
+    ctx.save();
+    square();
+    ctx.clip();
+    circle();
+    ctx.strokeStyle = LOADED_INK;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (mpp <= 4) {
+    ctx.strokeStyle = 'rgba(18, 48, 60, 0.28)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const [zx, zz] of area.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = LOADED_INK;
+  ctx.lineWidth = 1.5;
+  strokeEdges(ctx, mv, g.near);
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1;
+  strokeEdges(ctx, mv, g.outer);
+  ctx.setLineDash([]);
+
+  const [sx, sy] = mv.toScreen(l.x, l.z);
+  const r = mpp > 6 ? 4 : 6;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - r);
+  ctx.lineTo(sx + r, sy);
+  ctx.lineTo(sx, sy + r);
+  ctx.lineTo(sx - r, sy);
+  ctx.closePath();
+  ctx.fillStyle = '#e8f4f6';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+  if (mpp <= 8) mv.label(l.loader ? 'Chunk loader' : 'Servidor', sx, sy - r - 19, 14);
+}
+
+function loadedHit(wx, wz) {
+  if (!layers.loaded || day) return null;
+  const g = loadedGeometry();
+  if (!g) return null;
+  const band = bandAt(g.area, wx, wz);
+  if (!band) return null;
+  const l = state.loaded;
+  const [zx, zz] = g.area.center;
+  const where = l.loader
+    ? `centro: placa "chunkloader" em ${l.x.toFixed(0)}, ${l.z.toFixed(0)} (zona ${zx},${zz})`
+    : `centro: origem do mundo, sem placa "chunkloader" (zona ${zx},${zz})`;
+  const counts = band === 'active' && l.instances != null
+    ? `agora: ${fmt.format(l.instances)} objetos, ${l.tamed ?? 0} domados e ${l.wild ?? 0} selvagens com o servidor`
+    : '';
+  const text = {
+    active: ['Simulado pelo servidor', 'sem ninguém por perto: bichos comem e procriam, ovo aquecido choca'],
+    near: ['Carregado, parado', 'terreno e objetos existem no servidor, mas sem jogador perto nada anda'],
+    distant: ['Só objetos distantes', 'só objetos marcados como distantes existem aqui; nada anda'],
+  }[band];
+  return {
+    title: text[0],
+    lines: [text[1], counts, where, 'quem chega perto assume a simulação e devolve ao sair'].filter(Boolean),
+    anchor: [wx, wz],
+  };
+}
+
 function drawHiddenAreas(ctx, mv) {
   for (const h of myHides()) {
     if (h.kind !== 'base') continue;
@@ -611,6 +761,7 @@ function drawOverlay(ctx, mv) {
     for (const p of trailData.players) drawTrail(ctx, p.points, trailData.step, now);
   }
 
+  drawLoaded(ctx, mv);
   drawBaseAreas(ctx, mv);
   drawHiddenAreas(ctx, mv);
 

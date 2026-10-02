@@ -6,6 +6,7 @@ using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Access;
 using ValheimMetrics.Chests;
+using ValheimMetrics.ChunkLoader;
 using ValheimMetrics.Collectors;
 using ValheimMetrics.Exposition;
 using ValheimMetrics.Fire;
@@ -21,7 +22,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.18.0";
+        public const string Version = "0.19.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -59,6 +60,7 @@ namespace ValheimMetrics
                 new ChestMarks(),
                 new FireFuel(),
                 new SummonNames(),
+                new ChunkLoader.ChunkLoader(),
                 new TrafficCollector(),
                 new TuningCollector(),
                 new MapCollector(),
@@ -112,6 +114,7 @@ namespace ValheimMetrics
             ChestMarks.OnFrame(now);
             FireFuel.OnFrame(now);
             SummonNames.OnFrame(now);
+            ChunkLoader.ChunkLoader.OnFrame(now);
             OwnershipCollector.OnFrame(now);
             MapCollector.OnFrame();
             if (now < _nextSnapshot)

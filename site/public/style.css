@@ -490,6 +490,13 @@ body.past .brand h1::after { content: ' · passado'; font-size: 0.45em; color: v
   border: 2px solid #3a2410;
   box-shadow: 0 0 0 1px rgba(255, 235, 190, 0.5);
 }
+.loaded-swatch {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: linear-gradient(rgba(58, 138, 160, 0.55), rgba(58, 138, 160, 0.55)) center / 10px 10px no-repeat, rgba(58, 138, 160, 0.2);
+  border: 1.5px dashed #12303c;
+}
 .trail-swatch {
   width: 20px;
   height: 4px;

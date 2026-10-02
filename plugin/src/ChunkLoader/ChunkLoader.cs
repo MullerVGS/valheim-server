@@ -1,0 +1,223 @@
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+using ValheimMetrics.Collectors;
+using ValheimMetrics.Exposition;
+
+namespace ValheimMetrics.ChunkLoader
+{
+    // O dedicado ja e um jogador parado: ZoneSystem gera o terreno, ZNetScene instancia e ZDOMan da a
+    // posse em volta de ZNet.m_referencePosition, que no dedicado ninguem mexe e fica em (0,0). Mover
+    // esse ponto para a placa "chunkloader" faz o proprio jogo manter aquela area viva (3x3 zonas),
+    // sem mod no cliente e com o mesmo custo de hoje: a origem deixa de ser carregada.
+    sealed class ChunkLoader : ICollector
+    {
+        const double CheckSeconds = 2;
+        const double ScanDelaySeconds = 30;
+
+        static readonly int SignPrefab = "sign".GetStableHashCode();
+        static readonly int StampKey = "valheim-server.chunk_loader".GetStableHashCode();
+
+        static bool _enabled;
+        static readonly AnchorBook<ZDOID> _book = new AnchorBook<ZDOID>();
+        static readonly Queue<ZDOID> _pending = new Queue<ZDOID>();
+        static readonly List<ZDOID> _dead = new List<ZDOID>();
+        static bool _scanned;
+        static double _scanAt = -1;
+        static double _nextCheck;
+        static ZDOID _anchor = ZDOID.None;
+        static Vector3 _anchorPos;
+        static bool _active;
+        static long _moves;
+
+        public string Name => "chunk_loader";
+
+        public void Install(Harmony harmony)
+        {
+            var raw = Environment.GetEnvironmentVariable(AnchorBook<ZDOID>.Variable);
+            if (raw?.Trim() != "1")
+            {
+                if (!string.IsNullOrWhiteSpace(raw))
+                    Plugin.Log.LogWarning($"{AnchorBook<ZDOID>.Variable}={raw} ignorado: esperado 1.");
+                return;
+            }
+            if (!Patcher.Patch(harmony, typeof(ZDO), "Deserialize", new[] { typeof(ZPackage) }, typeof(ChunkLoader),
+                    postfix: nameof(DeserializePostfix), tag: "chunk_loader"))
+                return;
+            _enabled = true;
+            Plugin.Log.LogInfo("Chunk loader ligado: placa escrita \"chunkloader\" mantem a area carregada.");
+        }
+
+        // Roda dentro do RPC que recebe ZDO de cliente: so anota, a leitura acontece no frame seguinte.
+        static void DeserializePostfix(ZDO __instance)
+        {
+            try
+            {
+                if (__instance.GetPrefab() == SignPrefab)
+                    _pending.Enqueue(__instance.m_uid);
+            }
+            catch
+            {
+                Patcher.Errors++;
+            }
+        }
+
+        public static void OnFrame(double now)
+        {
+            if (!_enabled || ZDOMan.instance == null || ZNet.instance == null || !ZNet.instance.IsServer())
+                return;
+
+            while (_pending.Count > 0)
+            {
+                var zdo = ZDOMan.instance.GetZDO(_pending.Dequeue());
+                try
+                {
+                    if (zdo != null && zdo.IsValid())
+                        Observe(zdo);
+                }
+                catch
+                {
+                    Patcher.Errors++;
+                }
+            }
+
+            if (!_scanned)
+            {
+                if (_scanAt < 0)
+                    _scanAt = now + ScanDelaySeconds;
+                else if (now >= _scanAt)
+                    ScanExisting();
+            }
+
+            if (now >= _nextCheck)
+            {
+                _nextCheck = now + CheckSeconds;
+                try
+                {
+                    Refresh();
+                }
+                catch (Exception e)
+                {
+                    Patcher.Errors++;
+                    Plugin.Log.LogWarning($"Chunk loader: {e.Message}");
+                }
+            }
+
+            if (_active)
+                ZNet.instance.SetReferencePosition(_anchorPos);
+        }
+
+        static void Observe(ZDO zdo)
+        {
+            long stored = zdo.GetLong(StampKey);
+            long stamp = _book.Observe(zdo.m_uid, zdo.GetString(ZDOVars.s_text), stored, ZNet.instance.GetTime().Ticks);
+            if (stamp > 0 && stamp != stored)
+                zdo.Set(StampKey, stamp);
+            else if (stamp == 0 && stored != 0)
+                zdo.RemoveLong(StampKey);
+        }
+
+        // Uma vez por boot: placas escritas antes do restart ou com o plugin desligado.
+        static void ScanExisting()
+        {
+            _scanned = true;
+            try
+            {
+                var byId = AccessTools.Field(typeof(ZDOMan), "m_objectsByID").GetValue(ZDOMan.instance) as Dictionary<ZDOID, ZDO>;
+                if (byId == null)
+                    throw new MissingFieldException(nameof(ZDOMan), "m_objectsByID");
+                var signs = new List<ZDO>();
+                foreach (var zdo in byId.Values)
+                    if (zdo.GetPrefab() == SignPrefab)
+                        signs.Add(zdo);
+                foreach (var zdo in signs)
+                    Observe(zdo);
+                Plugin.Log.LogInfo($"Chunk loader: {signs.Count} placas no mundo, {_book.Count} escritas \"chunkloader\".");
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Chunk loader: varredura inicial falhou: {e.Message}");
+            }
+        }
+
+        static void Refresh()
+        {
+            _dead.Clear();
+            foreach (var id in _book.Ids)
+            {
+                var zdo = ZDOMan.instance.GetZDO(id);
+                if (zdo == null || !zdo.IsValid())
+                    _dead.Add(id);
+            }
+            foreach (var id in _dead)
+                _book.Forget(id);
+
+            if (_book.TryPick(out var anchor))
+            {
+                var pos = ZDOMan.instance.GetZDO(anchor).GetPosition();
+                if (!_active || anchor != _anchor)
+                {
+                    _moves++;
+                    var zone = ZoneSystem.GetZone(pos);
+                    Plugin.Log.LogInfo($"Chunk loader em ({pos.x:0}, {pos.z:0}), zona {zone.x},{zone.y}.");
+                }
+                _anchor = anchor;
+                _anchorPos = pos;
+                _active = true;
+            }
+            else if (_active)
+            {
+                _active = false;
+                _anchor = ZDOID.None;
+                ZNet.instance.SetReferencePosition(Vector3.zero);
+                Plugin.Log.LogInfo("Chunk loader sem placa: o servidor volta a carregar a origem.");
+            }
+        }
+
+        public void Write(PrometheusWriter w, double now)
+        {
+            // Vale com o loader desligado tambem: mostra o que o servidor simula sozinho em volta da origem.
+            if (ZNetScene.instance != null)
+            {
+                w.Family("valheim_server_instances", "gauge", "Objetos instanciados pelo proprio servidor (area em volta do ponto de referencia dele).");
+                w.Sample("valheim_server_instances", ZNetScene.instance.NrOfInstances());
+                int wild = 0, tamed = 0;
+                foreach (var c in Character.GetAllCharacters())
+                {
+                    if (c == null || c.IsPlayer() || !c.IsOwner())
+                        continue;
+                    if (c.IsTamed())
+                        tamed++;
+                    else
+                        wild++;
+                }
+                w.Family("valheim_server_characters", "gauge", "Criaturas que o proprio servidor esta simulando.");
+                w.Sample("valheim_server_characters", wild, "kind", "wild");
+                w.Sample("valheim_server_characters", tamed, "kind", "tamed");
+            }
+            if (ZNet.instance != null)
+            {
+                var refPos = ZNet.instance.GetReferencePosition();
+                w.Family("valheim_server_reference_position_meters", "gauge", "Centro da area que o servidor mantem carregada.");
+                w.Sample("valheim_server_reference_position_meters", refPos.x, "axis", "x");
+                w.Sample("valheim_server_reference_position_meters", refPos.z, "axis", "z");
+                var sim = ZNet.instance.GetSyncedSimulationDistance();
+                w.Family("valheim_server_simulation_distance_zones", "gauge", "Distancia de simulacao do servidor em zonas (near = terreno e objetos, far = objetos distantes).");
+                w.Sample("valheim_server_simulation_distance_zones", sim.NearSimulationDistance, "part", "near");
+                w.Sample("valheim_server_simulation_distance_zones", sim.FarSimulationDistance, "part", "far");
+                w.Family("valheim_server_simulation_classic", "gauge", "1 se a area e quadrada (modo classico); 0 = recorte redondo.");
+                w.Sample("valheim_server_simulation_classic", sim.IsClassic ? 1 : 0);
+            }
+
+            if (!_enabled)
+                return;
+            w.Family("valheim_chunk_loader_active", "gauge", "1 se uma placa \"chunkloader\" esta segurando a area.");
+            w.Sample("valheim_chunk_loader_active", _active ? 1 : 0);
+            w.Family("valheim_chunk_loader_signs", "gauge", "Placas escritas \"chunkloader\" (vale a mais recente).");
+            w.Sample("valheim_chunk_loader_signs", _book.Count);
+            w.Family("valheim_chunk_loader_moves_total", "counter", "Vezes que o loader mudou de placa.");
+            w.Sample("valheim_chunk_loader_moves_total", _moves);
+        }
+    }
+}

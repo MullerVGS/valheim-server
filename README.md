@@ -46,6 +46,7 @@ Opt-in, all off when empty (set in `.env`, then `docker compose up -d`):
 | `VALHEIM_SLOT_MARKS=1` | reserved chest slots (marking needs the Ghost Stacks client mod) |
 | `VALHEIM_FIRE_FUEL_FACTOR=N` | fires burn N× slower |
 | `VALHEIM_SUMMON_NAMES=1` | summons come back with the name you gave them |
+| `VALHEIM_CHUNK_LOADER=1` | a sign reading `chunkloader` keeps its area loaded with nobody around |
 | `VALHEIM_MAP_DIR` | writes map data for the site |
 
 Whitelist join requests work without the page: `/unban <n>` in game chat.

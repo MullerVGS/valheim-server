@@ -87,6 +87,19 @@ every 5 min per fire, bounded by the fire's own clock (wet/off/refilled fires ge
 `VALHEIM_SUMMON_NAMES=1`: summons (Dead Raiser skeletons, any tame born with a random name) reuse names the
 player gave earlier — up to 30 per character in `summon-names.tsv` next to the world.
 
+## Chunk loader
+
+`VALHEIM_CHUNK_LOADER=1`: a sign whose text is `chunkloader` (case, spaces, dashes and tags ignored) keeps
+the 3×3 zones around it loaded and simulated with nobody nearby — animals breed, eggs hatch, fires burn.
+The dedicated server already acts like a player standing still at the world origin; this only moves that
+point to the sign, so it costs the same and the origin stops being loaded. One area at a time: the most
+recently written sign wins (its stamp lives in the sign, so it survives restarts); breaking or rewriting it
+hands over to the previous one, or back to the origin. A player who walks in takes over the simulation and
+hands it back on leaving. Dropped items still need a workbench nearby to escape the 1 h cleanup.
+
+Metrics: `valheim_server_reference_position_meters`, `valheim_server_instances`, `valheim_server_characters`,
+`valheim_chunk_loader_active`.
+
 ## Map
 
 Positions use Web Mercator so Grafana Geomap works: `lon = x / 17476.27`, `lat = z / 17476.27`.
