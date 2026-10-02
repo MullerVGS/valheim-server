@@ -6,6 +6,7 @@ import {
   el, fmt, getJSON, inBox, itemGrid, itemName, loadItems, materials, normalize, PIN_ICONS, playerHref, shareBars, sumStacks,
 } from './common.js';
 import { hideControl, hideIcon, myAreaAt, onHiddenChange } from './hidden.js';
+import { WORLD } from './world.js';
 
 const [cx, cz] = location.pathname.replace(/^\/base\//, '').split(',').map(Number);
 const sheet = $('sheet');
@@ -200,7 +201,7 @@ async function main() {
     return;
   }
   const name = baseName(g, state?.pins, world);
-  document.title = `${name} · Valheim`;
+  document.title = `${name} · ${WORLD}`;
   $('back').href = `./#${Math.round((g.minX + g.maxX) / 2)},${Math.round((g.minZ + g.maxZ) / 2)},1`;
   chests = (world?.containers ?? []).filter((c) => !c.tomb && inBox(c.x, c.z, g, BASE_MARGIN)).sort((a, b) => b.items.length - a.items.length);
   const stored = chests.reduce((a, c) => a + c.items.reduce((s, i) => s + i[1], 0), 0);

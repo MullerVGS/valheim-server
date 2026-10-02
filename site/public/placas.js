@@ -5,9 +5,10 @@ import { SignSim } from './signsim.js';
 import { LIMIT, buildIcon, compose, flat, hoverText, normalize, parseIcon, plan } from './signcode.js';
 import { serialize } from './signrich.js';
 import { RichEditor } from './richedit.js';
+import { storeKey } from './world.js';
 
 const $ = (id) => document.getElementById(id);
-const STORE = 'valheim.placa';
+const STORE = storeKey('placa');
 const SAMPLE = '<#fc6>Hidromel\n<size=4>{u}<#f80>da casa';
 const DEFAULT_UNITS = 7.6;
 
@@ -47,7 +48,7 @@ function loadEntry(id) {
 
 // ---- o editor: visual (padrao) ou codigo. O textarea guarda o texto nos dois modos. ----
 
-const MODE_KEY = 'valheim.placa.modo';
+const MODE_KEY = storeKey('placa.modo');
 let visual = true;
 
 const iconKey = (inner) => parseIcon(`:${inner}:`)?.key;
@@ -985,7 +986,7 @@ function buildCheat() {
   box.insertAdjacentHTML('beforeend', '<p class="cheat-note">Ícone só vale com a placa só nele, até 50. Digite <code>:</code> + nome para procurar.</p>');
 }
 
-const CHEAT_KEY = 'valheim.placa.colinha';
+const CHEAT_KEY = storeKey('placa.colinha');
 function showCheat(open) {
   $('cheat').hidden = !open;
   $('cheat-toggle').setAttribute('aria-expanded', String(open));

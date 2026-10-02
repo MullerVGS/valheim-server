@@ -6,6 +6,7 @@ import {
   materials, normalize, PIN_ICONS, playerHref,
 } from './common.js';
 import { hiddenFor, hideIcon, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
+import { storeKey } from './world.js';
 
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
@@ -21,7 +22,7 @@ const PAIR_VIEW = { width: 272, height: 150, metersPerPixel: 1.2 };
 const layers = { pieces: true, pins: true, labels: true, portals: false, beds: false, players: true, trails: false, chests: false, safe: false };
 const HOME = { x: -44, z: -68, metersPerPixel: 3.2 };
 // Camadas e janela dos rastros ficam no navegador de quem olha.
-const PREFS_KEY = 'valheim.map';
+const PREFS_KEY = storeKey('map');
 let state = null;
 let world = null; // /api/world: baus, camas, construtores
 let items = null;

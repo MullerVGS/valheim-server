@@ -94,7 +94,7 @@ Qualquer visitante pode esconder uma base, baú, portal, cama, marcação ou jog
 confirmação). `hidden.mjs` tira aquilo de toda resposta para todo mundo, menos para quem escondeu, que continua
 vendo com a marca de escondido e é o único que pode mostrar de novo (botão "Escondidos" do mapa).
 
-- Quem é quem: cookie `valheim_id` (aleatório, HttpOnly, 400 dias). Sem ele, `POST /api/me` com a impressão
+- Quem é quem: cookie `<mundo>_id` (`WORLD_NAME` em minusculas) (aleatório, HttpOnly, 400 dias). Sem ele, `POST /api/me` com a impressão
   básica do navegador (`public/hidden.js`: UA, idioma, tela, fuso, canvas, WebGL) devolve o id antigo. Navegador
   ou aparelho diferente não é reconhecido; dois navegadores idênticos seriam.
 - Base escondida = os agrupamentos de peças de agora que tocam a caixa guardada, +15 m: se a base cresce, a parte

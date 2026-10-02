@@ -3,7 +3,10 @@
 // Tela larga: trilho de icones que abre com os nomes e fica como a pessoa deixou (localStorage).
 // Tela media: o trilho abre por cima do conteudo. Celular: gaveta que sai da esquerda pelo botao de menu.
 
-const PINNED_KEY = 'valheim.sidebar';
+import { WORLD, storeKey } from './world.js';
+
+const PINNED_KEY = storeKey('sidebar');
+const esc = (s) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const WIDE = window.matchMedia('(min-width: 1001px)');
 
 const ICONS = {
@@ -45,9 +48,9 @@ sidebar.className = 'sidebar';
 sidebar.id = 'sidebar';
 sidebar.setAttribute('aria-label', 'Navegação do site');
 sidebar.innerHTML = `
-  <a class="side-brand" href="./" aria-label="Valheim, ir para o mapa">
-    <span class="side-mark" aria-hidden="true">J</span>
-    <span class="side-name">Valheim</span>
+  <a class="side-brand" href="./" aria-label="${esc(WORLD)}, ir para o mapa">
+    <span class="side-mark" aria-hidden="true">${esc([...WORLD][0].toUpperCase())}</span>
+    <span class="side-name">${esc(WORLD)}</span>
   </a>
   <nav class="side-nav">
     ${NAV.map((g) => `

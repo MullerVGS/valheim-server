@@ -481,7 +481,9 @@ async function sendPage(res, page) {
   }
   const imports = Object.fromEntries(Object.keys(v).filter((n) => n.endsWith('.js')).map((n) => [`./${n}`, `./${n}?v=${v[n]}`]));
   let first = true;
+  const world = (WORLD || 'Valheim').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   html = html
+    .replaceAll('{{WORLD}}', world)
     .replace(/href="([\w-]+\.css)"/g, (m, n) => (v[n] ? `href="${n}?v=${v[n]}"` : m))
     .replace(/<script type="module" src="([\w-]+\.js)"><\/script>/g, (m, n) => {
       const tag = `<script type="module" src="${n}?v=${v[n]}"></script>`;

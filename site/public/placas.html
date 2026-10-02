@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="pt-BR" class="has-rail">
+<html lang="pt-BR" data-world="{{WORLD}}" class="has-rail">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base href="/">
-  <title>Placas · Valheim</title>
+  <title>Placas · {{WORLD}}</title>
   <meta name="description" content="Editor de placas: escreva, veja como fica no jogo e siga os passos para colar">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:wght@400;700&family=Noto+Emoji:wght@300&family=Noto+Sans+JP:wght@300&family=Noto+Sans:wght@200&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="placas.css">
-  <script>try { if (localStorage.getItem('valheim.sidebar') === 'open') document.documentElement.classList.add('rail-pinned'); } catch {}</script>
+  <script>try { if (localStorage.getItem(document.documentElement.dataset.world.toLowerCase() + '.sidebar') === 'open') document.documentElement.classList.add('rail-pinned'); } catch {}</script>
   <script type="module" src="sidebar.js"></script>
 </head>
 <body class="placas">

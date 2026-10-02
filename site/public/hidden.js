@@ -1,6 +1,7 @@
 // Escondidos: quem olha o site pode tirar do mapa uma base, bau, portal, cama, marcacao ou jogador. O servidor
 // some com aquilo para todo mundo, menos para este navegador, que continua vendo (marcado) e pode mostrar de
 // novo. O navegador e reconhecido por cookie; sem ele, por uma impressao basica (fingerprint) mandada aqui.
+import { WORLD } from './world.js';
 
 const KIND_NAMES = { base: 'base', chest: 'baú', portal: 'portal', bed: 'cama', pin: 'marcação', player: 'jogador' };
 
@@ -40,7 +41,7 @@ async function fingerprint() {
     ctx.fillStyle = '#f60';
     ctx.fillRect(100, 1, 60, 20);
     ctx.fillStyle = '#069';
-    ctx.fillText('Valheim ᚠᚢᚦ 🪓', 2, 14);
+    ctx.fillText(`${WORLD} ᚠᚢᚦ 🪓`, 2, 14);
     parts.push(c.toDataURL());
   } catch {}
   try {

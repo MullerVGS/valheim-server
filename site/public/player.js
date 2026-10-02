@@ -5,6 +5,7 @@ import {
   $, ago, BASE_MIN_PIECES, baseAt, baseHref, baseName, BIOME_NAMES, clock, columnChart, dayMonth, duration, el,
   fmt, getJSON, itemGrid, loadItems, mapHref,
 } from './common.js';
+import { WORLD } from './world.js';
 
 const RANGES = [
   [1, '1 h'],
@@ -189,7 +190,7 @@ async function main() {
     sheet.replaceChildren(el('p', { class: 'page-msg' }, `Não conheço nenhum viking chamado “${name}”. `, el('a', { href: './', text: 'Voltar ao mapa' })));
     return;
   }
-  document.title = `${name} · Valheim`;
+  document.title = `${name} · ${WORLD}`;
   // Online com a posicao escondida (escondidos): aparece como online, sem lugar.
   const online = state?.players.find((p) => p.name === name) ?? null;
   live = online?.x != null ? online : null;

@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 
 export const KINDS = ['base', 'chest', 'portal', 'bed', 'pin', 'player'];
-const COOKIE = 'valheim_id';
+const COOKIE = `${(process.env.WORLD_NAME || 'valheim').toLowerCase().replace(/[^a-z0-9]/g, '')}_id`;
 const COOKIE_MAX_AGE = 400 * 86400;
 // Folga em volta da base: baus, camas e marcacoes na borda tambem somem.
 const BASE_MARGIN = 15;
