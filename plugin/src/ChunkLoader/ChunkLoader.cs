@@ -7,10 +7,10 @@ using ValheimMetrics.Exposition;
 
 namespace ValheimMetrics.ChunkLoader
 {
-    // O dedicado ja e um jogador parado: ZoneSystem gera o terreno, ZNetScene instancia e ZDOMan da a
-    // posse em volta de ZNet.m_referencePosition, que no dedicado ninguem mexe e fica em (0,0). Mover
-    // esse ponto para a placa "chunkloader" faz o proprio jogo manter aquela area viva (3x3 zonas),
-    // sem mod no cliente e com o mesmo custo de hoje: a origem deixa de ser carregada.
+    // O dedicado e tratado como um jogador parado: ZoneSystem gera o terreno, ZNetScene instancia e
+    // ZDOMan da a posse em volta de ZNet.m_referencePosition. No dedicado esse ponto fica estacionado
+    // fora do mundo (1e6, 1e6), entao ele nao simula nada. Levar o ponto ate a placa "chunkloader" faz o
+    // proprio jogo manter aquela area viva (3x3 zonas), sem mod no cliente. Sem placa, volta ao original.
     sealed class ChunkLoader : ICollector
     {
         const double CheckSeconds = 2;
@@ -28,6 +28,7 @@ namespace ValheimMetrics.ChunkLoader
         static double _nextCheck;
         static ZDOID _anchor = ZDOID.None;
         static Vector3 _anchorPos;
+        static Vector3 _parked;
         static bool _active;
         static long _moves;
 
@@ -156,6 +157,8 @@ namespace ValheimMetrics.ChunkLoader
             if (_book.TryPick(out var anchor))
             {
                 var pos = ZDOMan.instance.GetZDO(anchor).GetPosition();
+                if (!_active)
+                    _parked = ZNet.instance.GetReferencePosition();
                 if (!_active || anchor != _anchor)
                 {
                     _moves++;
@@ -170,14 +173,14 @@ namespace ValheimMetrics.ChunkLoader
             {
                 _active = false;
                 _anchor = ZDOID.None;
-                ZNet.instance.SetReferencePosition(Vector3.zero);
-                Plugin.Log.LogInfo("Chunk loader sem placa: o servidor volta a carregar a origem.");
+                ZNet.instance.SetReferencePosition(_parked);
+                Plugin.Log.LogInfo($"Chunk loader sem placa: o ponto do servidor volta a ({_parked.x:0}, {_parked.z:0}).");
             }
         }
 
         public void Write(PrometheusWriter w, double now)
         {
-            // Vale com o loader desligado tambem: mostra o que o servidor simula sozinho em volta da origem.
+            // Vale com o loader desligado tambem: mostra o que o servidor simula por conta propria.
             if (ZNetScene.instance != null)
             {
                 w.Family("valheim_server_instances", "gauge", "Objetos instanciados pelo proprio servidor (area em volta do ponto de referencia dele).");

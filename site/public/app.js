@@ -669,7 +669,7 @@ function loadedHit(wx, wz) {
   const [zx, zz] = g.area.center;
   const where = l.loader
     ? `centro: placa "chunkloader" em ${l.x.toFixed(0)}, ${l.z.toFixed(0)} (zona ${zx},${zz})`
-    : `centro: origem do mundo, sem placa "chunkloader" (zona ${zx},${zz})`;
+    : `centro: ponto do próprio servidor em ${l.x.toFixed(0)}, ${l.z.toFixed(0)}, sem placa "chunkloader" (zona ${zx},${zz})`;
   const counts = band === 'active' && l.instances != null
     ? `agora: ${fmt.format(l.instances)} objetos, ${l.tamed ?? 0} domados e ${l.wild ?? 0} selvagens com o servidor`
     : '';

@@ -22,7 +22,7 @@ Mapa do servidor no estilo do mapa do jogo + métricas básicas do VictoriaMetri
   nova entra como item em `NAV`; `soon: true` mostra "em breve" sem link. Tela larga: trilho de ícones que abre
   com os nomes e lembra a escolha (`localStorage`); tela média: abre por cima; celular: gaveta pelo botão de menu (fecha no toque fora, Esc ou arrastando
   para a esquerda).
-- `public/loaded.js`: camada "Área do servidor" (só no menu de camadas, desligada por padrão). É o porte das regras do jogo para o que o próprio servidor mantém vivo em volta do ponto de referência dele (placa `chunkloader` ou a origem): simulado (`PointInsideActiveArea`), carregado (`FindSectorObjects`/`CreateLocalZones`) e o anel de objetos distantes. A distância de simulação vem do plugin (`valheim_server_simulation_distance_zones`); sem as métricas, a camada não desenha nada.
+- `public/loaded.js`: camada "Área do servidor" (só no menu de camadas, desligada por padrão). É o porte das regras do jogo para o que o próprio servidor mantém vivo em volta do ponto de referência dele (placa `chunkloader`; sem ela o dedicado fica fora do mundo e não aparece nada): simulado (`PointInsideActiveArea`), carregado (`FindSectorObjects`/`CreateLocalZones`) e o anel de objetos distantes. A distância de simulação vem do plugin (`valheim_server_simulation_distance_zones`); sem as métricas, a camada não desenha nada.
 - `world.mjs`: lê o save ao vivo (`SAVE_DIR`) quando o autosave termina (`_main.<n>.ok` novo): baús com o que tem
   dentro (qualquer ZDO com inventário e criador, e lápides), placas a até 2,5 m como nome do baú, camas e quem
   construiu cada peça (id do personagem pelas camas/lápides; sem eles, `creatorIndex` → histórico de jogadores do

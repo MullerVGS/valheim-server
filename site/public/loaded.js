@@ -1,5 +1,6 @@
 // Area que o proprio servidor mantem carregada em volta do ponto de referencia dele (a placa
-// "chunkloader", ou a origem do mundo). Porte das regras do jogo 1.0.14, sem DOM:
+// "chunkloader"; sem ela o dedicado fica estacionado fora do mundo e nao carrega nada).
+// Porte das regras do jogo 1.0.14, sem DOM:
 // - zona: ZoneSystem.GetZone / GetZonePos (64 m, centro em id * 64);
 // - terreno e objetos: ZDOMan.FindSectorObjects (aneis ate near) e ZoneSystem.CreateLocalZones;
 // - objetos distantes: o resto de FindSectorObjects (aneis ate near + far, so prefabs "distant");

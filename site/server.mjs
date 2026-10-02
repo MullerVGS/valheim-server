@@ -134,7 +134,7 @@ async function buildState() {
   };
 }
 
-// Onde o proprio servidor mantem o mundo vivo (placa "chunkloader" ou a origem). Sem as metricas do
+// Onde o proprio servidor mantem o mundo vivo (placa "chunkloader"; sem ela, fora do mundo). Sem as metricas do
 // plugin, null: a camada nao chuta.
 function loadedState(refPos, simZones, simClassic, loader, instances, characters) {
   const axis = (a) => refPos.find((r) => r.metric.axis === a);
