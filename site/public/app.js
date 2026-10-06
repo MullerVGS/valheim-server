@@ -7,7 +7,7 @@ import {
 } from './common.js';
 import { hiddenFor, hideIcon, kindName, myAreaAt, myHides, myPlayerHide, onHiddenChange, ready, unhide } from './hidden.js';
 import { storeKey } from './world.js';
-import { bandAt, loadedArea, outline } from './loaded.js';
+import { loadedAreas, loadedHitAt, outline } from './loaded.js';
 
 const STATE_EVERY_MS = 10000;
 const HISTORY_EVERY_MS = 300000;
@@ -546,10 +546,10 @@ let loadedCache = null;
 function loadedGeometry() {
   const l = state?.loaded;
   if (!l) return null;
-  const k = `${l.x}|${l.z}|${l.near}|${l.far}|${l.classic}`;
+  const k = JSON.stringify([l.anchors, l.x, l.z, l.near, l.far, l.classic]);
   if (loadedCache?.k !== k) {
-    const area = loadedArea(l.x, l.z, l);
-    loadedCache = { k, area, near: outline(area.near), outer: outline([...area.near, ...area.distant]) };
+    const coverage = loadedAreas(l);
+    loadedCache = { k, coverage, near: outline(coverage.near), outer: outline([...coverage.near, ...coverage.distant]) };
   }
   return loadedCache;
 }
@@ -576,7 +576,7 @@ function drawLoaded(ctx, mv) {
   if (!layers.loaded || day) return;
   const g = loadedGeometry();
   if (!g) return;
-  const { area } = g;
+  const { coverage } = g;
   const l = state.loaded;
   const mpp = mv.view.metersPerPixel;
   const half = 32;
@@ -585,50 +585,43 @@ function drawLoaded(ctx, mv) {
 
   ctx.fillStyle = LOADED_NEAR;
   ctx.beginPath();
-  for (const [zx, zz] of area.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
+  for (const [zx, zz] of coverage.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
   ctx.fill();
   ctx.clip();
 
-  const cx = area.center[0] * 64;
-  const cz = area.center[1] * 64;
-  const h = area.active.half;
-  const square = () => {
-    ctx.beginPath();
-    ctx.rect(...screenRect(mv, cx - h, cz - h, cx + h, cz + h));
-  };
-  const circle = () => {
+  // One path prevents overlapping areas from accumulating ink.
+  ctx.beginPath();
+  for (const area of coverage.areas) {
+    const cx = area.center[0] * 64, cz = area.center[1] * 64;
+    const h = area.active.half;
+    if (!area.active.radius) {
+      ctx.rect(...screenRect(mv, cx - h, cz - h, cx + h, cz + h));
+      continue;
+    }
+    // Intersect the circle with the native square (non-classic near 2).
+    const r = area.active.radius;
+    const cut = Math.acos(h / r);
     const [sx, sy] = mv.toScreen(cx, cz);
-    ctx.beginPath();
-    ctx.arc(sx, sy, area.active.radius / mpp, 0, Math.PI * 2);
-  };
-  ctx.save();
-  if (area.active.radius) {
-    circle();
-    ctx.clip();
+    ctx.moveTo(sx + h / mpp, sy + Math.sqrt(r * r - h * h) / mpp);
+    for (let quadrant = 0; quadrant < 4; quadrant++) {
+      const start = quadrant * Math.PI / 2 + cut;
+      const end = (quadrant + 1) * Math.PI / 2 - cut;
+      ctx.lineTo(sx + Math.cos(start) * r / mpp, sy + Math.sin(start) * r / mpp);
+      ctx.arc(sx, sy, r / mpp, start, end);
+    }
+    ctx.closePath();
   }
-  square();
   ctx.fillStyle = LOADED_ACTIVE;
   ctx.fill();
   ctx.strokeStyle = LOADED_INK;
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.restore();
-  if (area.active.radius) {
-    ctx.save();
-    square();
-    ctx.clip();
-    circle();
-    ctx.strokeStyle = LOADED_INK;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-  }
 
   if (mpp <= 4) {
     ctx.strokeStyle = 'rgba(18, 48, 60, 0.28)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (const [zx, zz] of area.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
+    for (const [zx, zz] of coverage.near) ctx.rect(...screenRect(mv, zx * 64 - half, zz * 64 - half, zx * 64 + half, zz * 64 + half));
     ctx.stroke();
   }
   ctx.restore();
@@ -643,35 +636,40 @@ function drawLoaded(ctx, mv) {
   strokeEdges(ctx, mv, g.outer);
   ctx.setLineDash([]);
 
-  const [sx, sy] = mv.toScreen(l.x, l.z);
-  const r = mpp > 6 ? 4 : 6;
-  ctx.beginPath();
-  ctx.moveTo(sx, sy - r);
-  ctx.lineTo(sx + r, sy);
-  ctx.lineTo(sx, sy + r);
-  ctx.lineTo(sx - r, sy);
-  ctx.closePath();
-  ctx.fillStyle = '#e8f4f6';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  for (const area of coverage.areas) {
+    const { x, z } = area.anchor;
+    const [sx, sy] = mv.toScreen(x, z);
+    const r = mpp > 6 ? 4 : 6;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - r);
+    ctx.lineTo(sx + r, sy);
+    ctx.lineTo(sx, sy + r);
+    ctx.lineTo(sx - r, sy);
+    ctx.closePath();
+    ctx.fillStyle = '#e8f4f6';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    if (mpp <= 8) mv.label(l.loader ? 'Chunk loader' : 'Servidor', sx, sy - r - 19, 14);
+  }
   ctx.restore();
-  if (mpp <= 8) mv.label(l.loader ? 'Chunk loader' : 'Servidor', sx, sy - r - 19, 14);
 }
 
 function loadedHit(wx, wz) {
   if (!layers.loaded || day) return null;
   const g = loadedGeometry();
   if (!g) return null;
-  const band = bandAt(g.area, wx, wz);
-  if (!band) return null;
+  const hit = loadedHitAt(g.coverage, wx, wz);
+  if (!hit) return null;
+  const { area, band } = hit;
+  const { x, z } = area.anchor;
   const l = state.loaded;
-  const [zx, zz] = g.area.center;
+  const [zx, zz] = area.center;
   const where = l.loader
-    ? `centro: placa "chunkloader" em ${l.x.toFixed(0)}, ${l.z.toFixed(0)} (zona ${zx},${zz})`
-    : `centro: ponto do próprio servidor em ${l.x.toFixed(0)}, ${l.z.toFixed(0)}, sem placa "chunkloader" (zona ${zx},${zz})`;
+    ? `centro: placa "chunkloader" em ${x.toFixed(0)}, ${z.toFixed(0)} (zona ${zx},${zz})`
+    : `centro: ponto do próprio servidor em ${x.toFixed(0)}, ${z.toFixed(0)}, sem placa "chunkloader" (zona ${zx},${zz})`;
   const counts = band === 'active' && l.instances != null
-    ? `agora: ${fmt.format(l.instances)} objetos, ${l.tamed ?? 0} domados e ${l.wild ?? 0} selvagens com o servidor`
+    ? `total do servidor: ${fmt.format(l.instances)} objetos, ${l.tamed ?? 0} domados e ${l.wild ?? 0} selvagens com o servidor`
     : '';
   const text = {
     active: ['Simulado pelo servidor', 'sem ninguém por perto: bichos comem e procriam, ovo aquecido choca'],

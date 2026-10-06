@@ -4,9 +4,8 @@ using System.Text;
 
 namespace ValheimMetrics.ChunkLoader
 {
-    // As placas escritas "chunkloader" e quando cada uma virou ancora. Vence a mais recente: escrever
-    // a placa em outro lugar muda o loader sem precisar quebrar a antiga. O carimbo vai no ZDO da
-    // placa, entao a escolha sobrevive ao restart. Sem dependencia do jogo.
+    // Persistent sign registry. Every sign is an anchor; the newest remains the primary
+    // reference point for compatibility with single-center metrics.
     public sealed class AnchorBook<TId>
     {
         public const string Variable = "VALHEIM_CHUNK_LOADER";
@@ -59,7 +58,7 @@ namespace ValheimMetrics.ChunkLoader
 
         public void Forget(TId id) => _stamps.Remove(id);
 
-        // A placa que esta segurando a area fica sublinhada; as outras voltam ao texto de quem escreveu.
+        // Underline every active sign.
         // null = o texto ja esta certo.
         public static string Mark(string text, bool active)
         {

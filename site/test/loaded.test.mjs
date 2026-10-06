@@ -1,7 +1,7 @@
 // Area carregada pelo servidor. Rodar: node --test site/test/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bandAt, loadedArea, outline, zoneOf } from '../public/loaded.js';
+import { bandAt, loadedArea, loadedAreas, loadedHitAt, outline, zoneOf } from '../public/loaded.js';
 
 const CLASSIC = { near: 2, far: 2, classic: true };
 
@@ -48,4 +48,36 @@ test('contorno da uniao nao desenha os lados internos', () => {
   assert.equal(outline([[0, 0]]).length, 4);
   assert.equal(outline([[0, 0], [1, 0]]).length, 6);
   assert.equal(outline(loadedArea(0, 0, CLASSIC).near).length, 20);
+});
+
+test('distant areas stay active together without loading the corridor', () => {
+  const c = loadedAreas({ ...CLASSIC, anchors: [{ x: 0, z: 0 }, { x: 2048, z: -1024 }] });
+  assert.equal(c.near.length, 50);
+  assert.equal(loadedHitAt(c, 0, 0).band, 'active');
+  assert.equal(loadedHitAt(c, 2048, -1024).band, 'active');
+  assert.equal(loadedHitAt(c, 1024, -512), null);
+});
+
+test('overlaps deduplicate zones and simulation takes precedence over distant rings', () => {
+  const c = loadedAreas({ ...CLASSIC, anchors: [{ x: 0, z: 0 }, { x: 192, z: 0 }] });
+  assert.equal(c.near.length, 40);
+  assert.ok(!c.distant.some(([x, z]) => c.near.some(([nx, nz]) => x === nx && z === nz)));
+  assert.equal(loadedHitAt(c, 192, 0).band, 'active');
+  assert.deepEqual(loadedHitAt(c, 192, 0).area.anchor, { x: 192, z: 0 });
+});
+
+test('signs in the same zone share coverage; removing an area preserves the other', () => {
+  const first = { x: 0, z: 0 };
+  const c = loadedAreas({ ...CLASSIC, anchors: [first, { x: 20, z: 20 }] });
+  assert.equal(c.near.length, 25);
+  assert.equal(outline(c.near).length, 20);
+  const remaining = loadedAreas({ ...CLASSIC, anchors: [first] });
+  assert.equal(loadedHitAt(remaining, 0, 0).band, 'active');
+  assert.equal(loadedHitAt(remaining, 2048, 0), null);
+});
+
+test('older single-center state remains supported', () => {
+  const c = loadedAreas({ ...CLASSIC, x: 130, z: -850 });
+  assert.equal(c.areas.length, 1);
+  assert.equal(loadedHitAt(c, 130, -850).band, 'active');
 });

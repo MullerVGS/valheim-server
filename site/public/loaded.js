@@ -92,3 +92,27 @@ export function outline(zones) {
   }
   return edges;
 }
+
+// All areas, deduplicating zones with near taking precedence over distant in overlaps.
+export function loadedAreas(state) {
+  const anchors = state.anchors ?? [{ x: state.x, z: state.z }];
+  const areas = anchors.map((anchor) => ({ ...loadedArea(anchor.x, anchor.z, state), anchor }));
+  const near = new Map(), distant = new Map();
+  for (const area of areas) {
+    for (const zone of area.near) near.set(key(zone), zone);
+    for (const zone of area.distant) distant.set(key(zone), zone);
+  }
+  for (const k of near.keys()) distant.delete(k);
+  return { areas, near: [...near.values()], distant: [...distant.values()] };
+}
+
+// The strongest band wins; tooltips identify the anchor covering the selected location.
+export function loadedHitAt(coverage, x, z) {
+  let best = null;
+  const rank = { distant: 1, near: 2, active: 3 };
+  for (const area of coverage.areas) {
+    const band = bandAt(area, x, z);
+    if (band && (!best || rank[band] > rank[best.band])) best = { area, band };
+  }
+  return best;
+}

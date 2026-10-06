@@ -73,7 +73,8 @@ namespace ValheimMetrics.Tuning
 
             _owners.Clear();
             _near.Clear();
-            zdoman.FindSectorObjects(zone, new SimulationDistance(synced.NearSimulationDistance, 0, synced.IsClassic), _near);
+            ChunkLoader.LoadedAreas.FindOwnershipObjects(zdoman, zone,
+                new SimulationDistance(synced.NearSimulationDistance, 0, synced.IsClassic), _near, null, uid);
             var self = View(net, uid);
 
             foreach (var zdo in _near)
@@ -84,7 +85,7 @@ namespace ValheimMetrics.Tuning
                 long owner = zdo.GetOwner();
                 bool mine = owner == uid;
                 bool hasOwner = zdo.HasOwner();
-                bool selfActive = ZNetScene.InActiveArea(position, zone);
+                bool selfActive = ChunkLoader.LoadedAreas.OwnershipActiveArea(position, zone, uid);
 
                 // Os campos caros so quando o jogo trocaria o dono.
                 bool candidate = mine ? !selfActive : selfActive;

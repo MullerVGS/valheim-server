@@ -7,10 +7,9 @@ using ValheimMetrics.Exposition;
 
 namespace ValheimMetrics.ChunkLoader
 {
-    // O dedicado e tratado como um jogador parado: ZoneSystem gera o terreno, ZNetScene instancia e
-    // ZDOMan da a posse em volta de ZNet.m_referencePosition. No dedicado esse ponto fica estacionado
-    // fora do mundo (1e6, 1e6), entao ele nao simula nada. Levar o ponto ate a placa "chunkloader" faz o
-    // proprio jogo manter aquela area viva (3x3 zonas), sem mod no cliente. Sem placa, volta ao original.
+    // The dedicated server is parked outside the world (1e6, 1e6). Moving its reference position
+    // to a sign enables native terrain, objects and ownership. LoadedAreas extends those paths
+    // to every anchor.
     sealed class ChunkLoader : ICollector
     {
         const double CheckSeconds = 2;
@@ -53,8 +52,10 @@ namespace ValheimMetrics.ChunkLoader
             if (!Patcher.Patch(harmony, typeof(ZNet), "SetReferencePosition", new[] { typeof(Vector3) }, typeof(ChunkLoader),
                     prefix: nameof(SetReferencePositionPrefix), tag: "chunk_loader"))
                 return;
+            if (!LoadedAreas.Install(harmony))
+                return;
             _enabled = true;
-            Plugin.Log.LogInfo("Chunk loader ligado: placa escrita \"chunkloader\" mantem a area carregada.");
+            Plugin.Log.LogInfo("Chunk loader enabled: every sign reading \"chunkloader\" keeps its area loaded.");
         }
 
         // Guarda o que o jogo quer (para devolver sem placa) e, com placa, troca pelo ponto dela.
@@ -77,10 +78,12 @@ namespace ValheimMetrics.ChunkLoader
         }
 
         static bool _inside;
-        static ZDOID _lastAnchor = ZDOID.None;
+        internal static readonly List<Vector3> Centers = new List<Vector3>();
+        static readonly Dictionary<ZDOID, Vector3> _anchors = new Dictionary<ZDOID, Vector3>();
+        static readonly HashSet<Vector2s> _zones = new HashSet<Vector2s>();
+        internal static bool Active => _enabled && _active;
 
-        // Mostra no jogo qual placa esta valendo. A placa que perdeu a vez pode nem ser mais "chunkloader"
-        // (reescrita), entao so tira o sublinhado se o texto ainda for o marcador.
+        // Show that the sign is active while preserving the player's text and formatting.
         static void Underline(ZDO zdo, bool active)
         {
             if (zdo == null || !zdo.IsValid())
@@ -213,11 +216,18 @@ namespace ValheimMetrics.ChunkLoader
                 _book.Forget(id);
 
             bool picked = _book.TryPick(out var anchor);
+            _anchors.Clear();
+            _zones.Clear();
+            Centers.Clear();
             foreach (var id in _book.Ids)
-                Underline(ZDOMan.instance.GetZDO(id), picked && id == anchor);
-            if (_lastAnchor != ZDOID.None && (!picked || _lastAnchor != anchor))
-                Underline(ZDOMan.instance.GetZDO(_lastAnchor), false);
-            _lastAnchor = picked ? anchor : ZDOID.None;
+            {
+                var zdo = ZDOMan.instance.GetZDO(id);
+                Underline(zdo, true);
+                var pos = zdo.GetPosition();
+                _anchors[id] = pos;
+                if (_zones.Add(ZoneSystem.GetZone(pos)))
+                    Centers.Add(pos);
+            }
 
             if (picked)
             {
@@ -251,7 +261,7 @@ namespace ValheimMetrics.ChunkLoader
             // Vale com o loader desligado tambem: mostra o que o servidor simula por conta propria.
             if (ZNetScene.instance != null)
             {
-                w.Family("valheim_server_instances", "gauge", "Objetos instanciados pelo proprio servidor (area em volta do ponto de referencia dele).");
+                w.Family("valheim_server_instances", "gauge", "Objects instantiated by the server across all loaded areas.");
                 w.Sample("valheim_server_instances", ZNetScene.instance.NrOfInstances());
                 int wild = 0, tamed = 0;
                 foreach (var c in Character.GetAllCharacters())
@@ -270,7 +280,7 @@ namespace ValheimMetrics.ChunkLoader
             if (ZNet.instance != null)
             {
                 var refPos = ZNet.instance.GetReferencePosition();
-                w.Family("valheim_server_reference_position_meters", "gauge", "Centro da area que o servidor mantem carregada.");
+                w.Family("valheim_server_reference_position_meters", "gauge", "Primary server reference point (newest sign).");
                 w.Sample("valheim_server_reference_position_meters", refPos.x, "axis", "x");
                 w.Sample("valheim_server_reference_position_meters", refPos.z, "axis", "z");
                 var sim = ZNet.instance.GetSyncedSimulationDistance();
@@ -283,11 +293,20 @@ namespace ValheimMetrics.ChunkLoader
 
             if (!_enabled)
                 return;
-            w.Family("valheim_chunk_loader_active", "gauge", "1 se uma placa \"chunkloader\" esta segurando a area.");
+            w.Family("valheim_chunk_loader_active", "gauge", "1 if at least one \"chunkloader\" sign keeps an area active.");
             w.Sample("valheim_chunk_loader_active", _active ? 1 : 0);
-            w.Family("valheim_chunk_loader_signs", "gauge", "Placas escritas \"chunkloader\" (vale a mais recente).");
+            w.Family("valheim_chunk_loader_signs", "gauge", "Signs reading \"chunkloader\" (all keep their areas active).");
             w.Sample("valheim_chunk_loader_signs", _book.Count);
-            w.Family("valheim_chunk_loader_moves_total", "counter", "Vezes que o loader mudou de placa.");
+            w.Family("valheim_chunk_loader_areas", "gauge", "Distinct zone centers kept active by signs.");
+            w.Sample("valheim_chunk_loader_areas", Centers.Count);
+            w.Family("valheim_chunk_loader_anchor_position_meters", "gauge", "Position of each active sign, in meters.");
+            foreach (var anchor in _anchors)
+            {
+                var id = anchor.Key.ToString();
+                w.Sample("valheim_chunk_loader_anchor_position_meters", anchor.Value.x, "anchor", id, "axis", "x");
+                w.Sample("valheim_chunk_loader_anchor_position_meters", anchor.Value.z, "anchor", id, "axis", "z");
+            }
+            w.Family("valheim_chunk_loader_moves_total", "counter", "Primary reference sign changes.");
             w.Sample("valheim_chunk_loader_moves_total", _moves);
         }
     }

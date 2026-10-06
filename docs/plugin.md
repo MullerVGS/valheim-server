@@ -89,16 +89,27 @@ player gave earlier — up to 30 per character in `summon-names.tsv` next to the
 
 ## Chunk loader
 
-`VALHEIM_CHUNK_LOADER=1`: a sign whose text is `chunkloader` (case, spaces, dashes and tags ignored) keeps
-the 3×3 zones around it loaded and simulated with nobody nearby — animals breed, eggs hatch, fires burn.
-The game treats the dedicated server as a player standing still, parked outside the world (1e6, 1e6), so
-it simulates nothing on its own; this moves that point to the sign, and the game does the rest. One area at
-a time: the most recently written sign wins and gets underlined (its stamp lives in the sign, so it survives restarts); breaking
-or rewriting it hands over to the previous one, or parks the server again. A player who walks in takes over the simulation and
-hands it back on leaving. Dropped items still need a workbench nearby to escape the 1 h cleanup.
+`VALHEIM_CHUNK_LOADER=1`: every sign whose text is `chunkloader` (case, spaces, dashes and tags ignored)
+keeps its own area loaded and simulated with nobody nearby — animals breed, eggs hatch, fires burn.
+All matching signs are active and underlined, including signs placed before upgrading. Breaking or
+rewriting a sign removes only its area; removing the last one parks the server outside the world again.
+Signs and their stamps survive restarts. A player who walks in takes over the simulation and hands it
+back on leaving. Dropped items still need a workbench nearby to escape the 1 h cleanup.
 
-Metrics: `valheim_server_reference_position_meters`, `valheim_server_instances`, `valheim_server_characters`,
-`valheim_chunk_loader_active`.
+The native simulation distance applies around every sign: at the default classic distance, 3×3 zones
+are simulated (96 m from the zone center), 5×5 have terrain and near objects, and a 9×9 ring includes
+distant objects. Overlapping areas share terrain and object instances; signs in the same zone share
+one loading center. Disconnected areas do not load the space between them. Each additional area adds
+server CPU and memory cost. No client mod is required.
+
+The map site's **Server area** layer displays every sign and its coverage. The newest sign remains the
+primary reference point for compatibility with the previous single-center metrics.
+
+Metrics: `valheim_server_reference_position_meters` (primary point), `valheim_server_instances` and
+`valheim_server_characters` (totals across all areas), `valheim_chunk_loader_active`,
+`valheim_chunk_loader_signs`, `valheim_chunk_loader_areas` (distinct zone centers), and
+`valheim_chunk_loader_anchor_position_meters{anchor,axis}` (each active sign's coordinates).
+`valheim_chunk_loader_moves_total` still counts primary sign changes.
 
 ## Map
 

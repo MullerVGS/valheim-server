@@ -107,8 +107,8 @@ services:
       # deu, sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_SUMMON_NAMES: ${VALHEIM_SUMMON_NAMES:-}
 
-      # Chunk loader (exige BEPINEX=true): 1 = placa escrita "chunkloader" mantem 3x3 zonas em volta dela
-      # carregadas e simuladas pelo servidor, sem ninguem por perto. Vazio = jogo. Ver README.
+      # Chunk loader (requires BEPINEX=true): 1 = every "chunkloader" sign keeps its area
+      # loaded and simulated without players nearby. Empty = vanilla. See README.
       VALHEIM_CHUNK_LOADER: ${VALHEIM_CHUNK_LOADER:-}
 
       # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin grava os dados do site

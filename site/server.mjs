@@ -13,6 +13,7 @@ import { cookieHeader, filterPieces, filterPins, filterState, filterTrails, filt
 import { MapData, maskTerrain } from './terrain.mjs';
 import { LiveWorld } from './world.mjs';
 import { createSigns } from './signs.mjs';
+import { loadedState } from './loaded.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -64,7 +65,7 @@ const xz = (m) => ({ x: Number(m.x), z: Number(m.z) });
 
 async function buildState() {
   const [online, fps, frameMax, zdos, explored, autosave, info, pos, biome, ping, pins, portals, beds, tables,
-    refPos, simZones, simClassic, loader, instances, characters] =
+    refPos, simZones, simClassic, loader, instances, characters, anchors] =
     await Promise.all([
       query('valheim_players_connected'),
       query('rate(valheim_server_frame_seconds_count[1m])'),
@@ -86,6 +87,7 @@ async function buildState() {
       query('valheim_chunk_loader_active'),
       query('valheim_server_instances'),
       query('valheim_server_characters'),
+      query('valheim_chunk_loader_anchor_position_meters'),
     ]);
 
   const players = new Map();
@@ -130,28 +132,7 @@ async function buildState() {
     })),
     beds: beds.map((r) => ({ ...xz(r.metric), owner: r.metric.owner ?? '' })),
     tables: tables.map((r) => xz(r.metric)),
-    loaded: loadedState(refPos, simZones, simClassic, loader, instances, characters),
-  };
-}
-
-// Onde o proprio servidor mantem o mundo vivo (placa "chunkloader"; sem ela, fora do mundo). Sem as metricas do
-// plugin, null: a camada nao chuta.
-function loadedState(refPos, simZones, simClassic, loader, instances, characters) {
-  const axis = (a) => refPos.find((r) => r.metric.axis === a);
-  const part = (p) => simZones.find((r) => r.metric.part === p);
-  const kind = (k) => characters.find((r) => r.metric.kind === k);
-  if (!axis('x') || !axis('z') || !part('near') || !part('far') || !simClassic.length) return null;
-  const value = (r) => (r ? Number(r.value[1]) : null);
-  return {
-    x: value(axis('x')),
-    z: value(axis('z')),
-    near: value(part('near')),
-    far: value(part('far')),
-    classic: num(simClassic) === 1,
-    loader: loader.length ? num(loader) === 1 : null,
-    instances: num(instances),
-    wild: value(kind('wild')),
-    tamed: value(kind('tamed')),
+    loaded: loadedState(refPos, simZones, simClassic, loader, instances, characters, anchors),
   };
 }
 

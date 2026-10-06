@@ -44,7 +44,7 @@ public class AnchorBookTests
     }
 
     [Fact]
-    public void MostRecentSignWins()
+    public void MostRecentSignIsPrimaryAndAllSignsRemainAnchors()
     {
         _book.Observe(1, "chunkloader", 0, 100);
         _book.Observe(2, "chunkloader", 0, 200);
@@ -52,6 +52,10 @@ public class AnchorBookTests
 
         Assert.True(_book.TryPick(out var id));
         Assert.Equal(2, id);
+        Assert.Equal(3, _book.Count);
+        Assert.Contains(1, _book.Ids);
+        Assert.Contains(2, _book.Ids);
+        Assert.Contains(3, _book.Ids);
     }
 
     [Fact]
