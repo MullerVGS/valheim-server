@@ -159,9 +159,9 @@ namespace ValheimMetrics.Tests
     {
         static readonly Dictionary<string, ItemInfo> Db = new Dictionary<string, ItemInfo>
         {
-            ["Wood"] = new ItemInfo("Wood", 1, true, false),
-            ["Stone"] = new ItemInfo("Stone", 2, true, false),
-            ["SwordIron"] = new ItemInfo("SwordIron", 3, false, true),
+            ["Wood"] = new ItemInfo("Wood", 1, 50, false),
+            ["Stone"] = new ItemInfo("Stone", 2, 50, false),
+            ["SwordIron"] = new ItemInfo("SwordIron", 3, 1, true),
         };
 
         static ItemInfo? ByHash(int h) => Db.Values.Where(i => i.Hash == h).Select(i => (ItemInfo?)i).FirstOrDefault();

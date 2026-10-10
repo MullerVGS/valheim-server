@@ -44,6 +44,7 @@ Opt-in, all off when empty (set in `.env`, then `docker compose up -d`):
 | `VALHEIM_SIGN_ICONS_CATALOG` | `:wood:` on a sign draws the item icon; long sign text |
 | `VALHEIM_ACCESS_PORT` | whitelist join requests page (**no auth** — proxy it) |
 | `VALHEIM_SLOT_MARKS=1` | reserved chest slots (marking needs the Ghost Stacks client mod) |
+| `VALHEIM_CHEST_SORT=1` | items dropped in a linked chest move to the chest that already holds them (linking needs the Chest Sort client mod) |
 | `VALHEIM_FIRE_FUEL_FACTOR=N` | fires burn N× slower |
 | `VALHEIM_SUMMON_NAMES=1` | summons come back with the name you gave them |
 | `VALHEIM_CHUNK_LOADER=1` | every sign reading `chunkloader` keeps its area loaded with nobody around |

@@ -76,6 +76,30 @@ Log: `/config/access-requests.tsv`.
 refills it. Marking needs the Ghost Stacks client mod (Alt+click); everyone else plays vanilla.
 Stackables only. Vanilla clients may drag a `0` item out; it vanishes on next place stacks.
 
+## Chest sorting
+
+`VALHEIM_CHEST_SORT=1`. A chest can be linked to other chests; whatever is dropped in it moves, a few
+seconds after it closes, to the linked chest that **already holds that item** (a zero-size stack or a
+reserved slot counts). Items with no home stay. Linking needs the Chest Sort client mod (Alt+E on a chest);
+everyone else plays vanilla and just sees the items arrive.
+
+- A destination can have links of its own, so chests chain: main dump → food dump → one chest per food.
+  Nearest chest wins; overflow goes to the next one that holds the item. Chests linked in a circle never
+  send to each other.
+- Works at any distance and with nobody around: the server rewrites the chests' saved contents.
+- Items on a reserved slot (see above) never leave it, and an empty reserved slot is never given to
+  another item.
+- Only build pieces: no carts, ships, tombstones or loot chests.
+- Sources are rechecked every 30 s, so a destination that got room is filled later.
+
+While it moves items the server holds the chests for about 2 s: opening one answers "in use", exactly as
+if another player had it open. That is what keeps a client from saving a stale copy over the move.
+If someone touches a chest in that window the move is cancelled and retried.
+
+Metrics: `valheim_chest_sort_chests`, `_sources`, `_runs_total`, `_items_moved_total`,
+`_conflicts_total` (cancelled moves), `_denied_total` ("in use" answers), `_skipped_total`, `_pending`,
+`_locked`.
+
 ## Fire fuel
 
 `VALHEIM_FIRE_FUEL_FACTOR=N` (2–100): anything using `Fireplace` burns N× slower. The server refunds fuel

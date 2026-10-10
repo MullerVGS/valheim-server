@@ -15,7 +15,53 @@ namespace ValheimMetrics.Chests
         public int WorldLevel;
         public int Quality;
         public int Stack;
+        public byte Flags;
+        public int RestOffset;
         public byte[] Raw;
+
+        const int HeadLength = 8;
+        const byte CheatedFlag = 1;
+
+        // Ultimo byte do item no formato 109 (ItemData.m_cheated). Juntar pilhas espalha a marca, como no jogo.
+        public bool Cheated => (Raw[Raw.Length - 1] & CheatedFlag) != 0;
+
+        public void MarkCheated() => Raw[Raw.Length - 1] |= CheatedFlag;
+        const byte QualityFlag = 4;
+        const byte StackFlag = 8;
+
+        // O mesmo item noutro slot e com outra pilha. So o cabecalho e regravado: variante, artesao e
+        // dados extras vao byte a byte, como vieram.
+        public ChestItem Rewrite(int x, int y, int stack)
+        {
+            if (stack < 0 || stack > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(stack));
+            byte flags = (byte)(Flags & ~(QualityFlag | StackFlag));
+            if (Quality != 1)
+                flags |= QualityFlag;
+            if (stack != 1)
+                flags |= StackFlag;
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(Raw, 0, 4);
+                writer.Write((byte)x);
+                writer.Write((byte)y);
+                writer.Write((byte)WorldLevel);
+                writer.Write(flags);
+                if (Quality != 1)
+                    writer.Write((ushort)Quality);
+                if (stack != 1)
+                    writer.Write((ushort)stack);
+                writer.Write(Raw, RestOffset, Raw.Length - RestOffset);
+                writer.Flush();
+                return new ChestItem
+                {
+                    PrefabHash = PrefabHash, X = x, Y = y, WorldLevel = WorldLevel, Quality = Quality, Stack = stack,
+                    Flags = flags, RestOffset = HeadLength + (Quality != 1 ? 2 : 0) + (stack != 1 ? 2 : 0),
+                    Raw = stream.ToArray(),
+                };
+            }
+        }
     }
 
     public sealed class ChestItems
@@ -62,8 +108,10 @@ namespace ValheimMetrics.Chests
             item.Y = reader.ReadByte();
             item.WorldLevel = reader.ReadByte();
             byte flags = reader.ReadByte();
+            item.Flags = flags;
             item.Quality = (flags & 4) != 0 ? reader.ReadUInt16() : 1;
             item.Stack = (flags & 8) != 0 ? reader.ReadUInt16() : 1;
+            item.RestOffset = (int)(reader.BaseStream.Position - start);
             if ((flags & 16) != 0)
                 reader.ReadInt32();
             if ((flags & 32) != 0)
@@ -116,6 +164,15 @@ namespace ValheimMetrics.Chests
             return null;
         }
 
+        // Container.UpdateRows: a grade cresce ate caber o item mais baixo.
+        public int Height(int prefabHeight)
+        {
+            int height = prefabHeight;
+            foreach (var item in Items)
+                height = Math.Max(height, item.Y + 1);
+            return height;
+        }
+
         // Pilha de zero, do jeito que ItemData.Save grava: sem variante, sem artesao, sem dado extra.
         // Inventory.Load a traz de volta com stack 0 (AddItem(item, 0, x, y) clona com 0).
         public ChestItem Ghost(int prefabHash, int x, int y, int worldLevel, int quality)
@@ -139,6 +196,7 @@ namespace ValheimMetrics.Chests
                 return new ChestItem
                 {
                     PrefabHash = prefabHash, X = x, Y = y, WorldLevel = worldLevel, Quality = quality, Stack = 0,
+                    Flags = flags, RestOffset = quality != 1 ? 12 : 10,
                     Raw = stream.ToArray(),
                 };
             }

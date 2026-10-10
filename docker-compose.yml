@@ -99,6 +99,10 @@ services:
       # marcado quando o bau fecha. Marcar exige o mod de cliente; o resto do grupo joga vanilla. Ver README.
       VALHEIM_SLOT_MARKS: ${VALHEIM_SLOT_MARKS:-}
 
+      # Chest sorting (requires BEPINEX=true): 1 = items dropped in a linked chest move to the linked
+      # chest that already holds that item. Linking needs the client mod; everyone else plays vanilla. See README.
+      VALHEIM_CHEST_SORT: ${VALHEIM_CHEST_SORT:-}
+
       # Combustivel de fogo (exige BEPINEX=true): N = tochas, braseiros, fogueiras e lareiras gastam N
       # vezes menos (2..100), sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_FIRE_FUEL_FACTOR: ${VALHEIM_FIRE_FUEL_FACTOR:-}

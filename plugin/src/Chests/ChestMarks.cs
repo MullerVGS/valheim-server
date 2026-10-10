@@ -23,13 +23,11 @@ namespace ValheimMetrics.Chests
         const double SettleSeconds = 3;
         const double ScanDelaySeconds = 10;
 
-        static readonly int MarksHash = MarksKey.GetStableHashCode();
+        internal static readonly int MarksHash = MarksKey.GetStableHashCode();
 
         static bool _enabled;
         static readonly Dictionary<ZDOID, Pending> _pending = new Dictionary<ZDOID, Pending>();
         static readonly List<ZDOID> _due = new List<ZDOID>();
-        static readonly Dictionary<int, ItemInfo?> _byHash = new Dictionary<int, ItemInfo?>();
-        static readonly Dictionary<string, ItemInfo?> _byName = new Dictionary<string, ItemInfo?>();
         static readonly Dictionary<int, Vector2Int?> _sizes = new Dictionary<int, Vector2Int?>();
         static double _scanAt = -1;
         static bool _scanned;
@@ -106,6 +104,12 @@ namespace ValheimMetrics.Chests
                         _pending[id] = new Pending { Due = now + SettleSeconds, Revision = zdo.DataRevision };
                         continue;
                     }
+                    // Na mao do remanejo: ele confere a revisao antes de escrever e desistiria por causa desta escrita.
+                    if (ChestSort.Locked(id))
+                    {
+                        _pending[id] = new Pending { Due = now + SettleSeconds, Revision = zdo.DataRevision };
+                        continue;
+                    }
                     // Aberto: quem abriu e dono e o mod dele (se tiver) cuida; o fechamento chega como ZDO novo.
                     if (zdo.GetInt(ZDOVars.s_inUse) != 0)
                         continue;
@@ -164,7 +168,7 @@ namespace ValheimMetrics.Chests
             }
 
             var marks = MarkCodec.Decode(zdo.GetString(MarksHash));
-            var outcome = ChestKeeper.Apply(chest, marks, size.Value.x, size.Value.y, ByHash, ByName);
+            var outcome = ChestKeeper.Apply(chest, marks, size.Value.x, size.Value.y, ItemCatalog.ByHash, ItemCatalog.ByName);
             if (outcome.ItemsChanged)
                 zdo.Set(ZDOVars.s_items, chest.ToBytes());
             if (outcome.MarksChanged)
@@ -186,33 +190,6 @@ namespace ValheimMetrics.Chests
                 size = new Vector2Int(container.m_width, container.m_height);
             _sizes[prefabHash] = size;
             return size;
-        }
-
-        static ItemInfo? ByHash(int hash)
-        {
-            if (_byHash.TryGetValue(hash, out var cached))
-                return cached;
-            var info = Describe(ZNetScene.instance.GetPrefab(hash));
-            _byHash[hash] = info;
-            return info;
-        }
-
-        static ItemInfo? ByName(string name)
-        {
-            if (_byName.TryGetValue(name, out var cached))
-                return cached;
-            var info = Describe(ZNetScene.instance.GetPrefab(name));
-            _byName[name] = info;
-            return info;
-        }
-
-        static ItemInfo? Describe(GameObject prefab)
-        {
-            var drop = prefab ? prefab.GetComponent<ItemDrop>() : null;
-            if (drop == null)
-                return null;
-            var shared = drop.m_itemData.m_shared;
-            return new ItemInfo(prefab.name, prefab.name.GetStableHashCode(), shared.m_maxStackSize > 1, shared.m_maxQuality > 1);
         }
 
         public void Write(PrometheusWriter w, double now)

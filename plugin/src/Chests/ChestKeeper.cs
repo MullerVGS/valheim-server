@@ -8,16 +8,18 @@ namespace ValheimMetrics.Chests
     {
         public readonly string Name;
         public readonly int Hash;
-        public readonly bool Stackable;
+        public readonly int MaxStack;
         public readonly bool HasTiers;
 
-        public ItemInfo(string name, int hash, bool stackable, bool hasTiers)
+        public ItemInfo(string name, int hash, int maxStack, bool hasTiers)
         {
             Name = name;
             Hash = hash;
-            Stackable = stackable;
+            MaxStack = maxStack;
             HasTiers = hasTiers;
         }
+
+        public bool Stackable => MaxStack > 1;
     }
 
     public sealed class ChestOutcome
@@ -36,10 +38,7 @@ namespace ValheimMetrics.Chests
         public static ChestOutcome Apply(ChestItems chest, IReadOnlyList<SlotMark> marks, int width, int prefabHeight,
             Func<int, ItemInfo?> byHash, Func<string, ItemInfo?> byName)
         {
-            // Container.UpdateRows: a grade cresce ate caber o item mais baixo.
-            int height = prefabHeight;
-            foreach (var item in chest.Items)
-                height = Math.Max(height, item.Y + 1);
+            int height = chest.Height(prefabHeight);
 
             var contents = new List<SlotContent>(chest.Items.Count);
             foreach (var item in chest.Items)
