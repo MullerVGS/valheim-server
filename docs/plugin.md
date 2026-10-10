@@ -111,7 +111,8 @@ every 5 min per fire, bounded by the fire's own clock (wet/off/refilled fires ge
 ## Summon names
 
 `VALHEIM_SUMMON_NAMES=1`: summons (Dead Raiser skeletons, any tame born with a random name) reuse names the
-player gave earlier — up to 30 per character in `summon-names.tsv` next to the world.
+player gave earlier — up to 30 per character in `summon-names.tsv` next to the world. A name is taken
+only while its summon is in its owner's loaded area: one left behind (portal, logout) frees it.
 
 ## Chunk loader
 

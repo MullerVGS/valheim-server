@@ -7,8 +7,9 @@ namespace ValheimMetrics.Summons
 {
     // Os nomes que cada jogador deu as suas invocacoes, em ordem, e quais invocacoes vivas usam cada um.
     // Invocacao nova cujo nome nao esta na lista dele recebe o primeiro nome livre (o de quem sumiu);
-    // renomear no jogo troca o nome antigo pelo novo na lista. Sem dependencia do jogo: o servidor
-    // chama Observe a cada ZDO que chega e salva o texto.
+    // renomear no jogo troca o nome antigo pelo novo na lista. So segura o nome a invocacao que esta
+    // com o jogador: a que ficou para tras (portal, logout) segue no mundo e nao prende o nome dela.
+    // Sem dependencia do jogo: o servidor chama Observe a cada ZDO que chega e salva o texto.
     public sealed class SummonBook<TId>
     {
         public const string Variable = "VALHEIM_SUMMON_NAMES";
@@ -37,7 +38,7 @@ namespace ValheimMetrics.Summons
 
         // `player` vazio = ainda nao se sabe de quem e (ja conhecido, segue com quem era).
         // Devolve o nome a gravar no ZDO, ou null para deixar como esta. `changed` diz se a lista mudou.
-        public string Observe(TId id, string player, string name, Func<TId, bool> exists, out bool changed)
+        public string Observe(TId id, string player, string name, Func<TId, bool> exists, Func<TId, bool> present, out bool changed)
         {
             changed = false;
             name = Clean(name);
@@ -62,7 +63,7 @@ namespace ValheimMetrics.Summons
                 return null;
             Prune(exists);
             var roster = RosterFor(player);
-            var used = new HashSet<string>(_live.Values.Where(l => l.Player == player).Select(l => l.Name), StringComparer.Ordinal);
+            var used = new HashSet<string>(_live.Where(l => l.Value.Player == player && present(l.Key)).Select(l => l.Value.Name), StringComparer.Ordinal);
             string chosen = null;
             if (!roster.Contains(name) || used.Contains(name))
                 chosen = roster.FirstOrDefault(n => !used.Contains(n));

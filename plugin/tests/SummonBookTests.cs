@@ -5,15 +5,18 @@ using Xunit;
 public class SummonBookTests
 {
     readonly HashSet<int> _alive = new HashSet<int>();
+    readonly HashSet<int> _leftBehind = new HashSet<int>();
     readonly SummonBook<int> _book = new SummonBook<int>();
+
+    bool Present(int id) => _alive.Contains(id) && !_leftBehind.Contains(id);
 
     string Summon(int id, string player, string randomName)
     {
         _alive.Add(id);
-        return _book.Observe(id, player, randomName, _alive.Contains, out _);
+        return _book.Observe(id, player, randomName, _alive.Contains, Present, out _);
     }
 
-    void Rename(int id, string name) => _book.Observe(id, "", name, _alive.Contains, out _);
+    void Rename(int id, string name) => _book.Observe(id, "", name, _alive.Contains, Present, out _);
 
     [Fact]
     public void FirstSummonKeepsTheRandomName()
@@ -54,6 +57,42 @@ public class SummonBookTests
     }
 
     [Fact]
+    public void SummonLeftBehindDoesNotHoldItsName()
+    {
+        Summon(1, "Bob", "A"); Rename(1, "Ossinho");
+        _leftBehind.Add(1);
+
+        Assert.Equal("Ossinho", Summon(2, "Bob", "Clank"));
+        Assert.Equal(new[] { "Ossinho" }, _book.Roster("Bob"));
+    }
+
+    [Fact]
+    public void SummonLeftBehindIsStillFollowedWhenItComesBack()
+    {
+        Summon(1, "Bob", "A"); Rename(1, "Ossinho");
+        _leftBehind.Add(1);
+        Summon(2, "Bob", "Clank");
+        _leftBehind.Remove(1);
+
+        Rename(1, "Tibia");
+
+        Assert.Equal(new[] { "Tibia" }, _book.Roster("Bob"));
+        Assert.Null(Summon(3, "Bob", "Rattle"));
+    }
+
+    [Fact]
+    public void AdoptedSummonLeftBehindDoesNotHoldItsName()
+    {
+        var book = SummonBook<int>.Parse("Bob\tOssinho\n");
+        _alive.Add(1);
+        book.Adopt(1, "Bob", "Ossinho");
+        _leftBehind.Add(1);
+        _alive.Add(2);
+
+        Assert.Equal("Ossinho", book.Observe(2, "Bob", "Clank", _alive.Contains, Present, out _));
+    }
+
+    [Fact]
     public void RenameReplacesTheOldNameInTheRoster()
     {
         Summon(1, "Bob", "A"); Rename(1, "Ossinho"); Rename(1, "Ossao");
@@ -68,11 +107,11 @@ public class SummonBookTests
         _alive.Remove(1);
         Assert.Equal("Ossinho", Summon(2, "Bob", "Clank"));
 
-        Assert.Equal("Ossinho", _book.Observe(2, "Bob", "Clank", _alive.Contains, out var changed));
+        Assert.Equal("Ossinho", _book.Observe(2, "Bob", "Clank", _alive.Contains, Present, out var changed));
         Assert.False(changed);
         Assert.Equal(new[] { "Ossinho" }, _book.Roster("Bob"));
 
-        Assert.Null(_book.Observe(2, "Bob", "Ossinho", _alive.Contains, out _));
+        Assert.Null(_book.Observe(2, "Bob", "Ossinho", _alive.Contains, Present, out _));
         Rename(2, "Clank");
         Assert.Equal(new[] { "Clank" }, _book.Roster("Bob"));
     }
@@ -94,14 +133,14 @@ public class SummonBookTests
         book.Adopt(1, "Bob", "Ossinho");
         _alive.Add(2);
 
-        Assert.Equal("Tibia", book.Observe(2, "Bob", "Clank", _alive.Contains, out _));
+        Assert.Equal("Tibia", book.Observe(2, "Bob", "Clank", _alive.Contains, Present, out _));
     }
 
     [Fact]
     public void UnknownPlayerIsLeftAlone()
     {
         _alive.Add(1);
-        Assert.Null(_book.Observe(1, "", "Rattle", _alive.Contains, out _));
+        Assert.Null(_book.Observe(1, "", "Rattle", _alive.Contains, Present, out _));
         Assert.Equal(0, _book.LiveCount);
     }
 

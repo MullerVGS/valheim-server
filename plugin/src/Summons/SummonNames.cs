@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Collectors;
@@ -111,7 +112,7 @@ namespace ValheimMetrics.Summons
                 return;
             }
             var name = zdo.GetString(ZDOVars.s_tamedName);
-            var write = _book.Observe(id, SummonerOf(zdo), name, Exists, out var changed);
+            var write = _book.Observe(id, SummonerOf(zdo), name, Exists, WithSummoner, out var changed);
             if (changed)
             {
                 _dirty = true;
@@ -147,6 +148,17 @@ namespace ValheimMetrics.Summons
             return zdo != null && zdo.IsValid();
         }
 
+        // Segura o nome a invocacao que esta na area carregada de quem invocou; a que ficou para tras
+        // nunca mais e vista pelo dono e so sai do mundo se alguem passar por ela.
+        static bool WithSummoner(ZDOID id)
+        {
+            var zdo = ZDOMan.instance.GetZDO(id);
+            if (zdo == null || !zdo.IsValid())
+                return false;
+            var peer = ZNet.instance.GetPeerByPlayerName(SummonerOf(zdo));
+            return peer != null && ZNetScene.InActiveArea(zdo.GetPosition(), peer.GetRefPos());
+        }
+
         // O caminho do save so existe depois que o jogo le -savedir; o livro abre no primeiro uso e,
         // no mesmo boot, adota as invocacoes que ja estavam no mundo.
         static bool Ready()
@@ -168,8 +180,17 @@ namespace ValheimMetrics.Summons
             if (byId == null)
                 throw new MissingFieldException(nameof(ZDOMan), "m_objectsByID");
             foreach (var zdo in byId.Values)
-                if (IsSummon(zdo.GetPrefab()))
-                    _book.Adopt(zdo.m_uid, SummonerOf(zdo), zdo.GetString(ZDOVars.s_tamedName));
+            {
+                if (!IsSummon(zdo.GetPrefab()))
+                    continue;
+                var player = SummonerOf(zdo);
+                var name = zdo.GetString(ZDOVars.s_tamedName);
+                // A que acabou de chegar de um cliente com nome fora da lista do dono e a invocacao nova
+                // que abriu o livro: passa por Observe e ganha nome.
+                if (_seen.Contains(zdo.m_uid) && !_book.Roster(player).Contains(name))
+                    continue;
+                _book.Adopt(zdo.m_uid, player, name);
+            }
             Plugin.Log.LogInfo($"Nomes de invocacao: {_book.PlayerCount} jogadores no arquivo, {_book.LiveCount} invocacoes no mundo.");
         }
 
