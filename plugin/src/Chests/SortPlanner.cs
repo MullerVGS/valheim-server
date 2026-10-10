@@ -27,6 +27,9 @@ namespace ValheimMetrics.Chests
     // Destinos vem do mais perto ao mais longe; o item enche o primeiro e o que sobrar segue para o
     // proximo. Empilha como Inventory.AddItem: mesma pilha so com prefab, qualidade e nivel do mundo
     // iguais. Slot reservado nunca perde o item dele nem recebe outro.
+    //
+    // Link "sempre": o que sobrou sem casa (ou sem espaco na casa) vai para esses baus, tenham eles o
+    // item ou nao. Casa vem primeiro; o "sempre" e o resto.
     public static class SortPlanner
     {
         public static bool HasCargo(SortChest source, Func<int, ItemInfo?> byHash)
@@ -38,7 +41,8 @@ namespace ValheimMetrics.Chests
         }
 
         // Devolve quantas unidades mudaram de bau. Mexe nas copias e marca Changed em quem mudou.
-        public static int Run(SortChest source, IReadOnlyList<SortChest> destinations, Func<int, ItemInfo?> byHash)
+        public static int Run(SortChest source, IReadOnlyList<SortChest> destinations, IReadOnlyList<SortChest> always,
+            Func<int, ItemInfo?> byHash)
         {
             var cargo = new List<ChestItem>(source.Items.Items);
             cargo.Sort((a, b) => a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.X.CompareTo(b.X));
@@ -52,20 +56,12 @@ namespace ValheimMetrics.Chests
 
                 int left = item.Stack;
                 foreach (var destination in destinations)
-                {
-                    if (left == 0)
-                        break;
-                    if (!IsHome(destination, info.Value))
-                        continue;
-                    int taken = info.Value.Stackable
-                        ? Stack(destination, item, left, info.Value)
-                        : Place(destination, item, info.Value) ? left : 0;
-                    if (taken == 0)
-                        continue;
-                    left -= taken;
-                    moved += taken;
-                    destination.Changed = true;
-                }
+                    if (left > 0 && IsHome(destination, info.Value))
+                        left -= Give(destination, item, left, info.Value);
+                foreach (var destination in always)
+                    if (left > 0)
+                        left -= Give(destination, item, left, info.Value);
+                moved += item.Stack - left;
 
                 if (left == item.Stack)
                     continue;
@@ -77,6 +73,14 @@ namespace ValheimMetrics.Chests
                 source.Changed = true;
             }
             return moved;
+        }
+
+        static int Give(SortChest chest, ChestItem item, int amount, ItemInfo info)
+        {
+            int taken = info.Stackable ? Stack(chest, item, amount, info) : Place(chest, item, info) ? amount : 0;
+            if (taken > 0)
+                chest.Changed = true;
+            return taken;
         }
 
         static ItemInfo? Movable(SortChest source, ChestItem item, Func<int, ItemInfo?> byHash)

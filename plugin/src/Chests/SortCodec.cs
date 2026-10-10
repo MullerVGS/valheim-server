@@ -9,7 +9,8 @@ namespace ValheimMetrics.Chests
     /// <summary>
     /// One chest this chest sends items to. The target is named by its own id, never by its ZDO id: the game
     /// renumbers every object when the world loads. The position is where the target stood when linked, so a
-    /// client can draw the link without having that chest loaded.
+    /// client can draw the link without having that chest loaded. An <see cref="Always"/> link also takes
+    /// what has no home anywhere, whether or not the target holds that item.
     /// </summary>
     public readonly struct SortLink : IEquatable<SortLink>
     {
@@ -17,13 +18,15 @@ namespace ValheimMetrics.Chests
         public readonly float X;
         public readonly float Y;
         public readonly float Z;
+        public readonly bool Always;
 
-        public SortLink(ulong target, float x, float y, float z)
+        public SortLink(ulong target, float x, float y, float z, bool always = false)
         {
             Target = target;
             X = x;
             Y = y;
             Z = z;
+            Always = always;
         }
 
         public bool Equals(SortLink other) => Target == other.Target;
@@ -53,7 +56,8 @@ namespace ValheimMetrics.Chests
     }
 
     /// <summary>
-    /// Text form of a node, kept in a ZDO string: <c>1|id|target@x,y,z|...</c>, ids in hex.
+    /// Text form of a node, kept in a ZDO string: <c>1|id|target@x,y,z|target@x,y,z,a|...</c>, ids in hex
+    /// and a trailing <c>a</c> on an "always" link.
     /// Decoding never throws; links it cannot read are skipped, and a node without a readable id is no node.
     /// </summary>
     public static class SortCodec
@@ -61,6 +65,7 @@ namespace ValheimMetrics.Chests
         public const string Key = "valheim-server.sort";
 
         private const string Version = "1";
+        private const string AlwaysMark = ",a";
 
         public static string Encode(SortNode node)
         {
@@ -73,6 +78,8 @@ namespace ValheimMetrics.Chests
                     continue;
                 text.Append('|').Append(Hex(link.Target)).Append('@')
                     .Append(Number(link.X)).Append(',').Append(Number(link.Y)).Append(',').Append(Number(link.Z));
+                if (link.Always)
+                    text.Append(AlwaysMark);
             }
             return text.ToString();
         }
@@ -92,10 +99,11 @@ namespace ValheimMetrics.Chests
                 if (at <= 0 || !TryHex(parts[i].Substring(0, at), out ulong target) || target == 0 || target == id)
                     continue;
                 string[] place = parts[i].Substring(at + 1).Split(',');
-                if (place.Length != 3 || !TryNumber(place[0], out float x) || !TryNumber(place[1], out float y) || !TryNumber(place[2], out float z))
+                bool always = place.Length == 4 && place[3] == "a";
+                if ((place.Length != 3 && !always) || !TryNumber(place[0], out float x) || !TryNumber(place[1], out float y) || !TryNumber(place[2], out float z))
                     continue;
                 if (node.IndexOf(target) < 0)
-                    node.Links.Add(new SortLink(target, x, y, z));
+                    node.Links.Add(new SortLink(target, x, y, z, always));
             }
             return node;
         }

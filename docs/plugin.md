@@ -86,6 +86,8 @@ everyone else plays vanilla and just sees the items arrive.
 - A destination can have links of its own, so chests chain: main dump → food dump → one chest per food.
   Nearest chest wins; overflow goes to the next one that holds the item. Chests linked in a circle never
   send to each other.
+- An **always** link (third state of the mod's Alt+E) also takes what has no home, or no room at home,
+  whether or not that chest holds the item. Home still comes first: always links only get the rest.
 - Works at any distance and with nobody around: the server rewrites the chests' saved contents.
 - Items on a reserved slot (see above) never leave it, and an empty reserved slot is never given to
   another item.

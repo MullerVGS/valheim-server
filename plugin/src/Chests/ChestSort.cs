@@ -13,6 +13,7 @@ namespace ValheimMetrics.Chests
     // sao postos pelo mod de cliente (Chest Sort) numa chave do ZDO de cada bau; cliente sem mod carrega
     // a chave intacta e so ve os itens mudarem de lugar. Um destino pode ter os proprios links, entao a
     // bagunca principal alimenta a bagunca de comida, que alimenta os baus de cada comida.
+    // Link "sempre" manda tambem o que nao tem casa em lugar nenhum.
     //
     // O servidor tem todos os ZDOs do mundo, carregados ou nao, e mexe nos bytes de s_items sem
     // instanciar nada. O perigo e o cliente: cada Container guarda o inventario em memoria, so rele o
@@ -325,8 +326,14 @@ namespace ValheimMetrics.Chests
             if (!SortPlanner.HasCargo(source, ItemCatalog.ByHash))
                 return;
 
+            var forced = new HashSet<ulong>();
+            foreach (var link in node.Links)
+                if (link.Always)
+                    forced.Add(link.Target);
+
             var zdos = new List<ZDO>();
             var views = new List<SortChest>();
+            var always = new List<SortChest>();
             foreach (ulong target in SortGraph.Destinations(node, NodeOf))
             {
                 var other = _byId.TryGetValue(target, out var uid) ? ZDOMan.instance.GetZDO(uid) : null;
@@ -337,9 +344,11 @@ namespace ValheimMetrics.Chests
                     continue;
                 zdos.Add(other);
                 views.Add(view);
+                if (forced.Contains(target))
+                    always.Add(view);
             }
 
-            int moved = SortPlanner.Run(source, views, ItemCatalog.ByHash);
+            int moved = SortPlanner.Run(source, views, always, ItemCatalog.ByHash);
             if (moved == 0)
                 return;
 

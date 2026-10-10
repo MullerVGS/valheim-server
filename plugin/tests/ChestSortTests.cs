@@ -24,6 +24,20 @@ namespace ValheimMetrics.Tests
         }
 
         [Fact]
+        public void AlwaysLinkRoundTrips()
+        {
+            var node = new SortNode(0xA1);
+            node.Links.Add(new SortLink(0xB2, 1f, 2f, 3f, always: true));
+            node.Links.Add(new SortLink(0xC3, 4f, 5f, 6f));
+
+            string text = SortCodec.Encode(node);
+
+            Assert.Equal("1|a1|b2@1,2,3,a|c3@4,5,6", text);
+            Assert.Equal(new[] { true, false }, SortCodec.Decode(text).Links.Select(l => l.Always));
+            Assert.Empty(SortCodec.Decode("1|a1|b2@1,2,3,x|c3@1,2,3,a,a").Links);
+        }
+
+        [Fact]
         public void ChestThatOnlyReceivesKeepsItsId()
         {
             Assert.Equal("1|7", SortCodec.Encode(new SortNode(7)));
@@ -143,6 +157,8 @@ namespace ValheimMetrics.Tests
 
         static byte[] Bytes(params GameFormat.Item[] items) => GameFormat.Chest(109, items);
 
+        static readonly SortChest[] None = new SortChest[0];
+
         [Fact]
         public void ItemGoesToTheChestThatAlreadyHoldsItAndTheRestStays()
         {
@@ -150,7 +166,7 @@ namespace ValheimMetrics.Tests
             var woods = Chest(5, 2, Item(0, 0, Wood, 10));
             var stones = Chest(5, 2, Item(3, 1, Stone, 50), Item(0, 0, Stone, 45));
 
-            int moved = SortPlanner.Run(source, new[] { woods, stones }, ByHash);
+            int moved = SortPlanner.Run(source, new[] { woods, stones }, None, ByHash);
 
             Assert.Equal(42, moved);
             Assert.Equal(Bytes(Item(2, 0, Carrot, 5)), source.Items.ToBytes());
@@ -165,7 +181,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, Carrot, 5));
             var woods = Chest(5, 2, Item(0, 0, Wood, 10));
 
-            Assert.Equal(0, SortPlanner.Run(source, new[] { woods }, ByHash));
+            Assert.Equal(0, SortPlanner.Run(source, new[] { woods }, None, ByHash));
             Assert.False(source.Changed || woods.Changed);
             Assert.True(SortPlanner.HasCargo(source, ByHash));
         }
@@ -177,7 +193,7 @@ namespace ValheimMetrics.Tests
             var near = Chest(1, 1, Item(0, 0, Wood, 40));
             var far = Chest(2, 1, Item(0, 0, Wood, 50));
 
-            int moved = SortPlanner.Run(source, new[] { near, far }, ByHash);
+            int moved = SortPlanner.Run(source, new[] { near, far }, None, ByHash);
 
             Assert.Equal(60, moved);
             Assert.Equal(Bytes(Item(0, 0, Wood, 50)), near.Items.ToBytes());
@@ -191,7 +207,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, Wood, 20));
             var woods = Chest(5, 2, Item(2, 1, Wood, 0));
 
-            SortPlanner.Run(source, new[] { woods }, ByHash);
+            SortPlanner.Run(source, new[] { woods }, None, ByHash);
 
             Assert.Empty(source.Items.Items);
             Assert.Equal(Bytes(Item(2, 1, Wood, 20)), woods.Items.ToBytes());
@@ -203,7 +219,7 @@ namespace ValheimMetrics.Tests
             var source = Marked(Chest(5, 2, Item(0, 0, Wood, 0), Item(1, 0, Stone, 8), Item(2, 0, Stone, 3)), Mark(1, 0, "Stone"));
             var both = Chest(5, 2, Item(0, 0, Wood, 1), Item(1, 0, Stone, 1));
 
-            int moved = SortPlanner.Run(source, new[] { both }, ByHash);
+            int moved = SortPlanner.Run(source, new[] { both }, None, ByHash);
 
             Assert.Equal(3, moved);
             Assert.Equal(Bytes(Item(0, 0, Wood, 0), Item(1, 0, Stone, 8)), source.Items.ToBytes());
@@ -215,7 +231,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, Stone, 50), Item(1, 0, Wood, 10), Item(2, 0, Stone, 5));
             var chest = Marked(Chest(2, 1, Item(1, 0, Stone, 50)), Mark(0, 0, "Wood"));
 
-            int moved = SortPlanner.Run(source, new[] { chest }, ByHash);
+            int moved = SortPlanner.Run(source, new[] { chest }, None, ByHash);
 
             Assert.Equal(10, moved);
             Assert.Equal(Bytes(Item(1, 0, Stone, 50), Item(0, 0, Wood, 10)), chest.Items.ToBytes());
@@ -228,7 +244,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, Wood, 5, worldLevel: 1));
             var woods = Chest(2, 1, Item(0, 0, Wood, 10));
 
-            SortPlanner.Run(source, new[] { woods }, ByHash);
+            SortPlanner.Run(source, new[] { woods }, None, ByHash);
 
             Assert.Equal(Bytes(Item(0, 0, Wood, 10), Item(1, 0, Wood, 5, worldLevel: 1)), woods.Items.ToBytes());
         }
@@ -244,7 +260,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, sword, Item(0, 0, Carrot, 3));
             var armory = Chest(2, 1, Item(0, 0, Sword, quality: 1));
 
-            int moved = SortPlanner.Run(source, new[] { armory }, ByHash);
+            int moved = SortPlanner.Run(source, new[] { armory }, None, ByHash);
 
             Assert.Equal(1, moved);
             sword.X = 1;
@@ -259,7 +275,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, 999, 5));
             var other = Chest(5, 2, Item(0, 0, 999, 5));
 
-            Assert.Equal(0, SortPlanner.Run(source, new[] { other }, ByHash));
+            Assert.Equal(0, SortPlanner.Run(source, new[] { other }, None, ByHash));
             Assert.False(SortPlanner.HasCargo(source, ByHash));
         }
 
@@ -269,7 +285,7 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, Item(0, 0, Wood, 50));
             var woods = Chest(1, 1, Item(0, 2, Wood, 50));
 
-            SortPlanner.Run(source, new[] { woods }, ByHash);
+            SortPlanner.Run(source, new[] { woods }, None, ByHash);
 
             Assert.Equal(Bytes(Item(0, 2, Wood, 50), Item(0, 0, Wood, 50)), woods.Items.ToBytes());
         }
@@ -282,11 +298,65 @@ namespace ValheimMetrics.Tests
             var source = Chest(5, 2, cheated);
             var woods = Chest(5, 2, Item(0, 0, Wood, 10));
 
-            SortPlanner.Run(source, new[] { woods }, ByHash);
+            SortPlanner.Run(source, new[] { woods }, None, ByHash);
 
             var expected = Item(0, 0, Wood, 15);
             expected.Cheated = true;
             Assert.Equal(Bytes(expected), woods.Items.ToBytes());
+        }
+
+        [Fact]
+        public void AlwaysLinkTakesWhatHasNoHome()
+        {
+            var source = Chest(5, 2, Item(0, 0, Wood, 30), Item(1, 0, Carrot, 5), Item(2, 0, Sword, quality: 2));
+            var woods = Chest(5, 2, Item(0, 0, Wood, 10));
+            var pantry = Chest(5, 2);
+
+            int moved = SortPlanner.Run(source, new[] { woods, pantry }, new[] { pantry }, ByHash);
+
+            Assert.Equal(36, moved);
+            Assert.Empty(source.Items.Items);
+            Assert.Equal(Bytes(Item(0, 0, Wood, 40)), woods.Items.ToBytes());
+            Assert.Equal(Bytes(Item(0, 0, Carrot, 5), Item(1, 0, Sword, quality: 2)), pantry.Items.ToBytes());
+        }
+
+        [Fact]
+        public void HomeComesFirstAndAlwaysTakesTheOverflow()
+        {
+            var source = Chest(5, 2, Item(0, 0, Wood, 50));
+            var rest = Chest(5, 2);
+            var woods = Chest(1, 1, Item(0, 0, Wood, 30));
+
+            SortPlanner.Run(source, new[] { rest, woods }, new[] { rest }, ByHash);
+
+            Assert.Empty(source.Items.Items);
+            Assert.Equal(Bytes(Item(0, 0, Wood, 50)), woods.Items.ToBytes());
+            Assert.Equal(Bytes(Item(0, 0, Wood, 30)), rest.Items.ToBytes());
+        }
+
+        [Fact]
+        public void AlwaysLinkLeavesReservedItemsAndReservedSlotsAlone()
+        {
+            var source = Marked(Chest(5, 2, Item(0, 0, Stone, 8), Item(1, 0, Carrot, 5), Item(2, 0, Wood, 0)), Mark(0, 0, "Stone"));
+            var rest = Marked(Chest(2, 1), Mark(0, 0, "Wood"));
+
+            int moved = SortPlanner.Run(source, new[] { rest }, new[] { rest }, ByHash);
+
+            Assert.Equal(5, moved);
+            Assert.Equal(Bytes(Item(0, 0, Stone, 8), Item(2, 0, Wood, 0)), source.Items.ToBytes());
+            Assert.Equal(Bytes(Item(1, 0, Carrot, 5)), rest.Items.ToBytes());
+        }
+
+        [Fact]
+        public void FullAlwaysChestLeavesTheRestInTheSource()
+        {
+            var source = Chest(5, 2, Item(0, 0, Carrot, 50), Item(1, 0, Stone, 50));
+            var rest = Chest(1, 1, Item(0, 0, Carrot, 20));
+
+            int moved = SortPlanner.Run(source, new[] { rest }, new[] { rest }, ByHash);
+
+            Assert.Equal(30, moved);
+            Assert.Equal(Bytes(Item(0, 0, Carrot, 20), Item(1, 0, Stone, 50)), source.Items.ToBytes());
         }
     }
 
