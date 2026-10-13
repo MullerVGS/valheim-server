@@ -37,6 +37,7 @@
     <Compile Include="../src/Map/PieceLayer.cs" />
     <Compile Include="../src/Fire/FuelRules.cs" />
     <Compile Include="../src/Summons/SummonBook.cs" />
+    <Compile Include="../src/Summons/SummonTrips.cs" />
   </ItemGroup>
 
   <ItemGroup>

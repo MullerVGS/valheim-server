@@ -22,7 +22,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.22.1";
+        public const string Version = "0.23.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -61,6 +61,7 @@ namespace ValheimMetrics
                 new ChestSort(),
                 new FireFuel(),
                 new SummonNames(),
+                new SummonTravel(),
                 new ChunkLoader.ChunkLoader(),
                 new TrafficCollector(),
                 new TuningCollector(),
@@ -116,6 +117,7 @@ namespace ValheimMetrics
             ChestSort.OnFrame(now);
             FireFuel.OnFrame(now);
             SummonNames.OnFrame(now);
+            SummonTravel.OnFrame(now);
             ChunkLoader.ChunkLoader.OnFrame(now);
             OwnershipCollector.OnFrame(now);
             MapCollector.OnFrame();

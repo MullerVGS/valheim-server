@@ -174,6 +174,13 @@ namespace ValheimMetrics.Summons
             return true;
         }
 
+        // A summon recreated by SummonTravel keeps its previous name.
+        internal static void Adopt(ZDO zdo)
+        {
+            if (_enabled && Ready())
+                _book.Adopt(zdo.m_uid, SummonerOf(zdo), zdo.GetString(ZDOVars.s_tamedName));
+        }
+
         static void AdoptExisting()
         {
             var byId = AccessTools.Field(typeof(ZDOMan), "m_objectsByID").GetValue(ZDOMan.instance) as Dictionary<ZDOID, ZDO>;
@@ -205,7 +212,7 @@ namespace ValheimMetrics.Summons
         }
 
         // Invocacao = criatura que nasce domada e ganha nome sorteado (o esqueleto amigo do cajado).
-        static bool IsSummon(int prefabHash)
+        internal static bool IsSummon(int prefabHash)
         {
             if (prefabHash == 0 || ZNetScene.instance == null)
                 return false;

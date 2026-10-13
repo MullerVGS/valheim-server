@@ -111,6 +111,10 @@ services:
       # deu, sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_SUMMON_NAMES: ${VALHEIM_SUMMON_NAMES:-}
 
+      # Summon travel (requires BEPINEX=true): 1 = summons following a player show up next to them
+      # after a portal or a dungeon door, no client mod. Empty = vanilla. See README.
+      VALHEIM_SUMMON_TRAVEL: ${VALHEIM_SUMMON_TRAVEL:-}
+
       # Chunk loader (requires BEPINEX=true): 1 = every "chunkloader" sign keeps its area
       # loaded and simulated without players nearby. Empty = vanilla. See README.
       VALHEIM_CHUNK_LOADER: ${VALHEIM_CHUNK_LOADER:-}

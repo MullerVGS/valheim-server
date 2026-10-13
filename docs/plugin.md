@@ -114,6 +114,15 @@ every 5 min per fire, bounded by the fire's own clock (wet/off/refilled fires ge
 player gave earlier — up to 30 per character in `summon-names.tsv` next to the world. A name is taken
 only while its summon is in its owner's loaded area: one left behind (portal, logout) frees it.
 
+## Summon travel
+
+`VALHEIM_SUMMON_TRAVEL=1`: summons following a player (same definition as above) reappear next to them
+about 3 s after a portal, a dungeon door or a teleport command. Teleporting is client-side, so the
+server only sees the jump afterwards: a summon left behind is moved, one its owner already unsummoned
+for being too far is rebuilt from the state it had (health, level, name) — the unsummon puff at the
+origin still plays. Summons told to stay, and deaths/respawns, are untouched. A destination inside the
+same loaded area is left alone (the summon walks). `valheim_summon_travel_{trips,moved,recreated,lost}_total`.
+
 ## Chunk loader
 
 `VALHEIM_CHUNK_LOADER=1`: every sign whose text is `chunkloader` (case, spaces, dashes and tags ignored)
