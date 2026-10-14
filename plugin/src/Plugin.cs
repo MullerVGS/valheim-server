@@ -16,6 +16,7 @@ using ValheimMetrics.Signs;
 using ValheimMetrics.Summons;
 using ValheimMetrics.Traffic;
 using ValheimMetrics.Tuning;
+using ValheimMetrics.Vines;
 
 namespace ValheimMetrics
 {
@@ -23,7 +24,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.25.0";
+        public const string Version = "0.26.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -61,6 +62,7 @@ namespace ValheimMetrics
                 new ChestMarks(),
                 new ChestSort(),
                 new FireFuel(),
+                new VineBerries(),
                 new SummonNames(),
                 new SummonTravel(),
                 new ChunkLoader.ChunkLoader(),
@@ -118,6 +120,7 @@ namespace ValheimMetrics
             ChestMarks.OnFrame(now);
             ChestSort.OnFrame(now);
             FireFuel.OnFrame(now);
+            VineBerries.OnFrame(now);
             SummonNames.OnFrame(now);
             SummonTravel.OnFrame(now);
             ChunkLoader.ChunkLoader.OnFrame(now);

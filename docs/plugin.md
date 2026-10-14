@@ -113,6 +113,16 @@ Metrics: `valheim_chest_sort_chests`, `_sources`, `_runs_total`, `_items_moved_t
 every 5 min per fire, bounded by the fire's own clock (wet/off/refilled fires get nothing). Restart loses
 ≤5 min of pending refund.
 
+## Vine berries
+
+`VALHEIM_VINE_BERRY_SPACING=M` (0.5–10 m): an Ashvine segment grows a berry once the game's respawn time
+(200 min) has passed since it was last harvested, if it has 2+ connections and no berry on the same face
+is closer than M. In the game one berry blocks every other within ~4.9 m along the wall × 9 m high and
+restarts their timers. Every 60 s the server sends the game's own `RPC_SetPicked(false)` to loaded clients
+and writes the ZDO ahead in revision for unloaded ones; a berry already shown is never removed by the game.
+Harvest times live in the ZDO (`valheim-server.vine_harvest`), so restarts keep them; segments harvested
+before the plugin ran count as due. Growth (width, height) stays vanilla — it runs on the owning client.
+
 ## Summon names
 
 `VALHEIM_SUMMON_NAMES=1`: summons (Dead Raiser skeletons, any tame born with a random name) reuse names the
