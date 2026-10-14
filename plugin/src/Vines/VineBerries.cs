@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Collectors;
@@ -7,7 +9,8 @@ using ValheimMetrics.Exposition;
 
 namespace ValheimMetrics.Vines
 {
-    // Ashvine berries packed tighter than the game allows, without a client mod (VineRules).
+    // Ashvine berries packed tighter than the game allows on planted vines, without a client mod
+    // (VineRules). Planted = touching cultivated soil, read from each zone's TerrainComp ZDO.
     // Vine and Pickable only run on the ZDO owner; the dedicated server just sees segments arrive.
     // It remembers when each one was harvested and, once a minute, hands berries out with the same
     // RPC the game's respawn uses, so loaded clients show them at once. The flag also goes into the
@@ -21,6 +24,7 @@ namespace ValheimMetrics.Vines
         const float DefaultRespawnMinutes = 200;
 
         static readonly int VinePrefab = "VineAsh".GetStableHashCode();
+        static readonly int SoilPrefab = "_TerrainCompiler".GetStableHashCode();
         static readonly int HarvestKey = "valheim-server.vine_harvest".GetStableHashCode();
         // Vine.m_berryBlocker.center: the middle of the segment's face.
         static readonly Vector3 FaceCenter = new Vector3(-0.22f, 0.75f, 0f);
@@ -36,6 +40,11 @@ namespace ValheimMetrics.Vines
         static readonly Queue<(ZDOID id, long ticks)> _harvests = new Queue<(ZDOID, long)>();
         static readonly List<ZDOID> _ids = new List<ZDOID>();
         static readonly List<VineSegment> _segments = new List<VineSegment>();
+        // Cultivated vertices per zone and how many zones claim each one (borders are shared).
+        static readonly Dictionary<ZDOID, List<long>> _soilByZone = new Dictionary<ZDOID, List<long>>();
+        static readonly Dictionary<long, int> _soil = new Dictionary<long, int>();
+        static readonly HashSet<ZDOID> _soilDirty = new HashSet<ZDOID>();
+        static int _planted;
         static int _withBerry;
         static long _given;
         static long _harvestCount;
@@ -81,7 +90,10 @@ namespace ValheimMetrics.Vines
         {
             try
             {
-                if (__instance.GetPrefab() != VinePrefab)
+                int prefab = __instance.GetPrefab();
+                if (prefab == SoilPrefab)
+                    _soilDirty.Add(__instance.m_uid);
+                if (prefab != VinePrefab)
                     return;
                 _vines.Add(__instance.m_uid);
                 if (__state && __instance.GetBool(ZDOVars.s_picked, true))
@@ -112,6 +124,13 @@ namespace ValheimMetrics.Vines
                 // Survives restarts; ahead in revision so the owner adopts it instead of overwriting it.
                 zdo.Set(HarvestKey, ticks);
                 zdo.DataRevision += RevisionLead;
+            }
+
+            if (_scanned && _soilDirty.Count > 0)
+            {
+                foreach (var id in _soilDirty)
+                    ReadSoil(id, ZDOMan.instance.GetZDO(id));
+                _soilDirty.Clear();
             }
 
             if (!_scanned)
@@ -150,19 +169,67 @@ namespace ValheimMetrics.Vines
                     throw new MissingFieldException(nameof(ZDOMan), "m_objectsByID");
                 foreach (var zdo in byId.Values)
                 {
-                    if (zdo.GetPrefab() != VinePrefab)
+                    int prefab = zdo.GetPrefab();
+                    if (prefab == SoilPrefab)
+                        ReadSoil(zdo.m_uid, zdo);
+                    if (prefab != VinePrefab)
                         continue;
                     _vines.Add(zdo.m_uid);
                     long ticks = zdo.GetLong(HarvestKey);
                     if (ticks > 0 && !_harvested.ContainsKey(zdo.m_uid))
                         _harvested[zdo.m_uid] = ticks;
                 }
-                Plugin.Log.LogInfo($"Vine berries: {_vines.Count} Ashvine segments, {_harvested.Count} with a known harvest, respawn {RespawnMinutes():0} min.");
+                _soilDirty.Clear();
+                Plugin.Log.LogInfo($"Vine berries: {_vines.Count} Ashvine segments, {_harvested.Count} with a known harvest, {_soil.Count} cultivated vertices, respawn {RespawnMinutes():0} min.");
             }
             catch (Exception e)
             {
                 Plugin.Log.LogWarning($"Vine berries: initial scan failed: {e.Message}");
             }
+        }
+
+        static void ReadSoil(ZDOID id, ZDO zdo)
+        {
+            if (_soilByZone.TryGetValue(id, out var old))
+            {
+                foreach (long key in old)
+                    if (--_soil[key] == 0)
+                        _soil.Remove(key);
+                _soilByZone.Remove(id);
+            }
+            if (zdo == null || !zdo.IsValid())
+                return;
+            try
+            {
+                var bytes = zdo.GetByteArray(ZDOVars.s_TCData);
+                if (bytes == null)
+                    return;
+                var center = zdo.GetPosition();
+                var keys = new List<long>();
+                foreach (var (x, z) in SoilMap.Cultivated(Decompress(bytes), center.x, center.z))
+                {
+                    long key = SoilMap.Key(x, z);
+                    keys.Add(key);
+                    _soil.TryGetValue(key, out int n);
+                    _soil[key] = n + 1;
+                }
+                if (keys.Count > 0)
+                    _soilByZone[id] = keys;
+            }
+            catch (Exception e)
+            {
+                Patcher.Errors++;
+                Plugin.Log.LogWarning($"Vine berries: terrain {id} unreadable: {e.Message}");
+            }
+        }
+
+        // Utils.Decompress: gzip.
+        static byte[] Decompress(byte[] bytes)
+        {
+            using var input = new GZipStream(new MemoryStream(bytes), CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            input.CopyTo(output);
+            return output.ToArray();
         }
 
         static float RespawnMinutes()
@@ -187,6 +254,7 @@ namespace ValheimMetrics.Vines
                     continue;
                 }
                 var rotation = zdo.GetRotation();
+                var position = zdo.GetPosition();
                 bool berry = !zdo.GetBool(ZDOVars.s_picked, true);
                 if (berry)
                     _withBerry++;
@@ -194,13 +262,14 @@ namespace ValheimMetrics.Vines
                 _ids.Add(id);
                 _segments.Add(new VineSegment
                 {
-                    Center = ToV3(zdo.GetPosition() + rotation * FaceCenter),
+                    Center = ToV3(position + rotation * FaceCenter),
                     Wall = ToV3(rotation * Vector3.right),
                     Up = ToV3(rotation * Vector3.up),
                     Along = ToV3(rotation * Vector3.forward),
                     HasBerry = berry,
                     Enabled = zdo.GetBool(ZDOVars.s_enabled, true),
                     HarvestedTicks = harvested,
+                    NearSoil = SoilMap.Near(_soil.Keys, position.x, position.z, VineRules.SoilReach),
                 });
             }
             foreach (var id in dead)
@@ -209,6 +278,10 @@ namespace ValheimMetrics.Vines
                 _harvested.Remove(id);
             }
 
+            _planted = 0;
+            foreach (bool p in VineRules.Planted(_segments))
+                if (p)
+                    _planted++;
             var given = VineRules.Plan(_segments, ZNet.instance.GetTime().Ticks, _respawnTicks, _spacing);
             foreach (int i in given)
             {
@@ -232,6 +305,10 @@ namespace ValheimMetrics.Vines
             w.Sample("valheim_vine_berry_spacing_meters", _spacing);
             w.Family("valheim_vine_segments", "gauge", "Ashvine segments in the world.");
             w.Sample("valheim_vine_segments", _vines.Count);
+            w.Family("valheim_vine_planted_segments", "gauge", "Ashvine segments of planted vines (touching cultivated soil); only these get berries.");
+            w.Sample("valheim_vine_planted_segments", _planted);
+            w.Family("valheim_vine_cultivated_vertices", "gauge", "Cultivated terrain vertices known to the server.");
+            w.Sample("valheim_vine_cultivated_vertices", _soil.Count);
             w.Family("valheim_vine_berries", "gauge", "Ashvine segments holding a berry at the last sweep.");
             w.Sample("valheim_vine_berries", _withBerry);
             w.Family("valheim_vine_berries_given_total", "counter", "Berries the server put on Ashvine segments.");

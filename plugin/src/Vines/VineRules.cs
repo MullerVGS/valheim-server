@@ -29,15 +29,19 @@ namespace ValheimMetrics.Vines
         public V3 Along;
         public bool HasBerry;
         public bool Enabled;
+        // Cultivated soil within SoilReach of the segment: where a sapling could have stood.
+        public bool NearSoil;
         // Server time ticks of the last harvest; 0 = unknown, eligible right away.
         public long HarvestedTicks;
     }
 
-    // Ashvine berries with a smaller exclusion than the game's. In the game a segment only grows a
+    // Ashvine berries with a smaller exclusion than the game's, on planted vines only. In the game a segment only grows a
     // berry if no berry-bearing segment touches its BerryBlocker (4.86 m along the wall x 9.11 m high
     // in front of the face), and a blocked segment restarts its respawn timer. Here a segment may
     // grow one once its own respawn time passed since it was harvested, if it has 2+ connections
-    // (Vine.GetBranches() > 0) and no berry on the same face is closer than the spacing.
+    // (Vine.GetBranches() > 0) and no berry on the same face is closer than the spacing. Wild vines
+    // (Ashlands vegetation) keep the game's rule: a vine counts as planted when any segment touching it,
+    // directly or through others, stands near cultivated soil, since a sapling only grows there.
     public static class VineRules
     {
         public const string Variable = "VALHEIM_VINE_BERRY_SPACING";
@@ -50,6 +54,10 @@ namespace ValheimMetrics.Vines
         // Segments this close to the face plane share the face; the other side of a wall does not.
         const double FaceDepth = 0.5;
         const double SameFaceDot = 0.9;
+        // Plant.m_attachDistance (1.8 m) between the sapling and the root, plus a margin.
+        public const double SoilReach = 2.5;
+        // Segments this close belong to the same vine (a step plus drift).
+        const double Touch = 2.6;
 
         public static double? ParseSpacing(string raw)
         {
@@ -67,6 +75,7 @@ namespace ValheimMetrics.Vines
         public static List<int> Plan(IReadOnlyList<VineSegment> segments, long nowTicks, long respawnTicks, double spacing)
         {
             var grid = new Grid(segments, Math.Max(spacing, Step + Drift));
+            var planted = Planted(segments);
             var berries = new HashSet<int>();
             var candidates = new List<int>();
             for (int i = 0; i < segments.Count; i++)
@@ -74,7 +83,7 @@ namespace ValheimMetrics.Vines
                 var s = segments[i];
                 if (s.HasBerry)
                     berries.Add(i);
-                else if (s.Enabled && nowTicks - s.HarvestedTicks >= respawnTicks)
+                else if (planted[i] && s.Enabled && nowTicks - s.HarvestedTicks >= respawnTicks)
                     candidates.Add(i);
             }
             candidates.Sort((a, b) =>
@@ -92,6 +101,33 @@ namespace ValheimMetrics.Vines
                 given.Add(i);
             }
             return given;
+        }
+
+        // Segments of a vine with some segment near cultivated soil.
+        public static bool[] Planted(IReadOnlyList<VineSegment> segments)
+        {
+            var parent = new int[segments.Count];
+            for (int i = 0; i < parent.Length; i++)
+                parent[i] = i;
+            int Find(int i)
+            {
+                while (parent[i] != i)
+                    i = parent[i] = parent[parent[i]];
+                return i;
+            }
+            var grid = new Grid(segments, Touch);
+            for (int i = 0; i < segments.Count; i++)
+                foreach (int j in grid.Near(segments[i].Center))
+                    if (j > i && (segments[j].Center - segments[i].Center).Length < Touch)
+                        parent[Find(i)] = Find(j);
+            var soil = new HashSet<int>();
+            for (int i = 0; i < segments.Count; i++)
+                if (segments[i].NearSoil)
+                    soil.Add(Find(i));
+            var planted = new bool[segments.Count];
+            for (int i = 0; i < planted.Length; i++)
+                planted[i] = soil.Contains(Find(i));
+            return planted;
         }
 
         // Like Vine.CheckGrow's BlockSensor: another segment one step away in each of the four

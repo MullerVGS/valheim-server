@@ -38,6 +38,7 @@
     <Compile Include="../src/Map/PieceLayer.cs" />
     <Compile Include="../src/Fire/FuelRules.cs" />
     <Compile Include="../src/Vines/VineRules.cs" />
+    <Compile Include="../src/Vines/SoilMap.cs" />
     <Compile Include="../src/Summons/SummonBook.cs" />
     <Compile Include="../src/Summons/SummonTrips.cs" />
     <Compile Include="../src/Calendar/DayRules.cs" />

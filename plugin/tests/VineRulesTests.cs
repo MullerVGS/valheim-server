@@ -10,7 +10,7 @@ public class VineRulesTests
     const long Now = 1000 * Minute;
 
     // Face of a wall in the x = 0 plane, as Vine segments grow on it: one step apart along z and up y.
-    static VineSegment At(double along, double up, bool berry = false, long harvested = 0, double depth = 0, bool back = false) =>
+    static VineSegment At(double along, double up, bool berry = false, long harvested = 0, double depth = 0, bool back = false, bool soil = true) =>
         new VineSegment
         {
             Center = new V3(depth, up, along),
@@ -20,6 +20,7 @@ public class VineRulesTests
             HasBerry = berry,
             Enabled = true,
             HarvestedTicks = harvested,
+            NearSoil = soil,
         };
 
     static List<VineSegment> Row(int count, double up = 0) =>
@@ -147,5 +148,53 @@ public class VineRulesTests
         var row = new List<VineSegment> { At(0, 0), At(1.5, 0.85), At(3, 0.05) };
 
         Assert.Equal(2, VineRules.Connections(row, 1));
+    }
+
+    [Fact]
+    public void Vinha_selvagem_fica_com_a_regra_do_jogo()
+    {
+        var wild = Enumerable.Range(0, 5).Select(i => At(i * VineRules.Step, 0, soil: false)).ToList();
+
+        Assert.Empty(Plan(wild, spacing: 0.5));
+    }
+
+    [Fact]
+    public void Um_pedaco_perto_da_terra_arada_marca_a_vinha_inteira()
+    {
+        var vine = Enumerable.Range(0, 4).Select(i => At(0, i * VineRules.Step, soil: i == 0)).ToList();
+        var wild = Enumerable.Range(0, 4).Select(i => At(20, i * VineRules.Step, soil: false)).ToList();
+
+        var planted = VineRules.Planted(vine.Concat(wild).ToList());
+
+        Assert.Equal(new[] { true, true, true, true, false, false, false, false }, planted);
+    }
+
+    [Fact]
+    public void Terra_arada_lida_do_TCData()
+    {
+        // TerrainComp.Save com pitch 3: so o vertice (2, 1) cultivado, (0, 0) pintado de outra cor.
+        var ms = new System.IO.MemoryStream();
+        var w = new System.IO.BinaryWriter(ms);
+        w.Write(1); w.Write(7); w.Write(0f); w.Write(0f); w.Write(0f); w.Write(4f);
+        w.Write(9);
+        for (int i = 0; i < 9; i++)
+        {
+            w.Write(i == 4);
+            if (i == 4) { w.Write(1f); w.Write(0f); }
+        }
+        w.Write(9);
+        for (int i = 0; i < 9; i++)
+        {
+            bool painted = i == 0 || i == 5;
+            w.Write(painted);
+            if (painted) { w.Write(1f); w.Write(i == 5 ? 1f : 0.2f); w.Write(0f); w.Write(1f); }
+        }
+
+        var soil = SoilMap.Cultivated(ms.ToArray(), 100, -50);
+
+        Assert.Equal(new[] { (101, -50) }, soil);
+        var keys = new HashSet<long> { SoilMap.Key(101, -50) };
+        Assert.True(SoilMap.Near(keys, 103, -49, VineRules.SoilReach));
+        Assert.False(SoilMap.Near(keys, 104, -50, VineRules.SoilReach));
     }
 }

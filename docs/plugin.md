@@ -115,13 +115,16 @@ every 5 min per fire, bounded by the fire's own clock (wet/off/refilled fires ge
 
 ## Vine berries
 
-`VALHEIM_VINE_BERRY_SPACING=M` (0.5–10 m): an Ashvine segment grows a berry once the game's respawn time
+`VALHEIM_VINE_BERRY_SPACING=M` (0.5–10 m): a planted Ashvine segment grows a berry once the game's respawn time
 (200 min) has passed since it was last harvested, if it has 2+ connections and no berry on the same face
 is closer than M. In the game one berry blocks every other within ~4.9 m along the wall × 9 m high and
 restarts their timers. Every 60 s the server sends the game's own `RPC_SetPicked(false)` to loaded clients
 and writes the ZDO ahead in revision for unloaded ones; a berry already shown is never removed by the game.
 Harvest times live in the ZDO (`valheim-server.vine_harvest`), so restarts keep them; segments harvested
 before the plugin ran count as due. Growth (width, height) stays vanilla — it runs on the owning client.
+Planted means some segment of the vine (or of segments touching it) stands within 2.5 m of cultivated
+soil, where the sapling had to be; the server reads it from each zone's `_TerrainCompiler` ZDO and rereads
+a zone when it changes. Wild Ashlands vines keep the game's rule.
 
 ## Summon names
 
