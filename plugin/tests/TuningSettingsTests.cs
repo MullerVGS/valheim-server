@@ -83,6 +83,19 @@ public class TuningSettingsTests
 
         Assert.False(s.DeferAssetUnload);
         Assert.Equal(OwnerHysteresisMode.Off, s.OwnerHysteresis);
+        Assert.Equal(OwnerBalanceMode.Off, s.OwnerBalance);
+    }
+
+    [Theory]
+    [InlineData("on", OwnerBalanceMode.On)]
+    [InlineData("measure", OwnerBalanceMode.Measure)]
+    [InlineData("off", OwnerBalanceMode.Off)]
+    public void Le_o_modo_do_balanceamento(string value, OwnerBalanceMode expected)
+    {
+        var s = Parse(new Dictionary<string, string> { ["VALHEIM_OWNER_BALANCE"] = value });
+
+        Assert.Equal(expected, s.OwnerBalance);
+        Assert.Empty(s.Warnings);
     }
 
     [Theory]
@@ -100,6 +113,7 @@ public class TuningSettingsTests
 
     [Theory]
     [InlineData("VALHEIM_OWNER_HYSTERESIS", "1")]
+    [InlineData("VALHEIM_OWNER_BALANCE", "1")]
     [InlineData("VALHEIM_DEFER_ASSET_UNLOAD", "sim")]
     public void Palavra_desconhecida_e_ignorada_com_aviso(string name, string value)
     {

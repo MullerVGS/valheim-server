@@ -4,7 +4,8 @@ using ValheimMetrics.Tuning;
 
 namespace ValheimMetrics.Collectors
 {
-    // O que os ajustes opt-in fizeram: limpeza de assets adiada e trocas de dono feitas ou seguradas.
+    // O que os ajustes opt-in fizeram: limpeza de assets adiada, trocas de dono feitas ou seguradas e
+    // criaturas passadas para quem tem upload sobrando.
     sealed class TuningCollector : ICollector
     {
         public string Name => "tuning";
@@ -25,7 +26,18 @@ namespace ValheimMetrics.Collectors
             w.Family("valheim_owner_hysteresis", "gauge", "Modo da histerese de dono (VALHEIM_OWNER_HYSTERESIS).");
             w.Sample("valheim_owner_hysteresis", 1, "mode", OwnerHandoff.Mode.ToString().ToLowerInvariant());
 
-            if (OwnerHandoff.Mode != OwnerHysteresisMode.Off)
+            w.Family("valheim_owner_balance", "gauge", "Modo do balanceamento de criaturas por upload (VALHEIM_OWNER_BALANCE).");
+            w.Sample("valheim_owner_balance", 1, "mode", OwnerHandoff.Balance.ToString().ToLowerInvariant());
+
+            if (OwnerHandoff.Balance != OwnerBalanceMode.Off)
+            {
+                w.Family("valheim_owner_balance_moves_total", "counter", "Criaturas passadas de dono com upload no teto para jogador perto com folga (mode=on) ou que seriam (mode=measure).");
+                for (int k = 0; k < OwnerHandoff.KindNames.Length; k++)
+                    if (OwnerHandoff.KindNames[k] == "creature" || OwnerHandoff.KindNames[k] == "tamed")
+                        w.Sample("valheim_owner_balance_moves_total", OwnerHandoff.BalanceMoves[k], "kind", OwnerHandoff.KindNames[k]);
+            }
+
+            if (OwnerHandoff.Patched)
             {
                 w.Family("valheim_zdo_owner_changes_total", "counter", "Trocas de dono feitas pela varredura de 2 s do servidor. action=release: dono saiu; claim: jogador assumiu.");
                 w.Family("valheim_zdo_owner_kept_total", "counter", "Trocas que a histerese segurou (mode=on) ou seguraria (mode=measure).");

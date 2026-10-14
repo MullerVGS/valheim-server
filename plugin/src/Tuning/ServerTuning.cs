@@ -57,7 +57,7 @@ namespace ValheimMetrics.Tuning
             }
 
             AssetUnload.Install(harmony, settings.DeferAssetUnload);
-            OwnerHandoff.Install(harmony, settings.OwnerHysteresis);
+            OwnerHandoff.Install(harmony, settings.OwnerHysteresis, settings.OwnerBalance);
         }
 
         // O PresentManager so escreve Application.targetFrameRate quando o limite calculado muda:

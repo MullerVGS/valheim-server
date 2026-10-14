@@ -37,6 +37,11 @@ grows the queue. Every player needs that download bandwidth. Client→server is 
 - `VALHEIM_OWNER_HYSTERESIS=on|measure`: pieces, chests, plants and tames change owner only when they leave
   what the owner has loaded, instead of at 1.5 zones. Fixes ping-pong on bases at zone borders.
   `measure` = vanilla, only counts. Falls back to vanilla on error.
+- `VALHEIM_OWNER_BALANCE=on|measure`: a client never uploads more than 150 KiB/s, and whoever owns 30+ creatures
+  hits that cap, so everything they own reaches the others late. During the same 2 s ownership pass, a creature
+  whose owner uploads ≥ 115 KB/s moves to the player being scanned if they upload ≤ 60 KB/s and stand about as
+  close to it as the owner (+8 m). At most 4 per player every 6 s, nearest first; a moved creature stays put for
+  120 s; summons never move. `measure` only counts and logs. Metric: `valheim_owner_balance_moves_total{kind}`.
 
 ## Sign icons
 

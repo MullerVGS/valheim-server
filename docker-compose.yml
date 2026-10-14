@@ -85,6 +85,9 @@ services:
       # carregado; measure = como o jogo, contando o que seria segurado. Vazio = jogo. Ver README.
       VALHEIM_DEFER_ASSET_UNLOAD: ${VALHEIM_DEFER_ASSET_UNLOAD:-}
       VALHEIM_OWNER_HYSTERESIS: ${VALHEIM_OWNER_HYSTERESIS:-}
+      # Balanceamento: on = criatura de quem esta com o upload no teto passa para quem esta perto e
+      # tem folga; measure = so conta. Vazio = jogo. Ver README.
+      VALHEIM_OWNER_BALANCE: ${VALHEIM_OWNER_BALANCE:-}
 
       # Icones nas placas (exige BEPINEX=true). Caminho, dentro do container, do catalogo gerado
       # por tools/sign-icons. Vazio = placa como o jogo faz. Ver README.

@@ -2,26 +2,34 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
+using ValheimMetrics.Summons;
 
 namespace ValheimMetrics.Tuning
 {
     // Substitui ZDOMan.ReleaseNearbyZDOS por uma replica com as regras de OwnerHandoffRules.
     // Base sobre a quina de zona fazia 2-3 mil pecas trocarem de dono a cada borda cruzada, e cada
     // troca e revisao nova reenviada a todos que as veem.
+    // A mesma varredura faz o balanceamento (OwnerBalanceRules): criatura de dono com upload no teto
+    // passa para o jogador da vez, se ele esta perto e tem folga.
     static class OwnerHandoff
     {
         public enum Kind { Object, Tamed, Creature, Player }
         public static readonly string[] KindNames = { "object", "tamed", "creature", "player" };
 
         public static OwnerHysteresisMode Mode { get; private set; }
+        public static OwnerBalanceMode Balance { get; private set; }
+        public static bool Patched { get; private set; }
         public static readonly long[] Releases = new long[4];
         public static readonly long[] Claims = new long[4];
         public static readonly long[] Kept = new long[4];
+        // Criaturas passadas de dono (Balance = On) ou que seriam (Measure), por Kind.
+        public static readonly long[] BalanceMoves = new long[4];
 
         struct OwnerView
         {
             public bool Peer;
             public Vector2s Zone;
+            public Vector3 Position;
             public int Near;
             public bool Classic;
         }
@@ -30,18 +38,38 @@ namespace ValheimMetrics.Tuning
         static readonly Dictionary<long, OwnerView> _owners = new Dictionary<long, OwnerView>();
         static bool _failed;
 
-        public static void Install(Harmony harmony, OwnerHysteresisMode mode)
+        struct ShedCandidate
         {
-            if (mode == OwnerHysteresisMode.Off)
+            public ZDO Zdo;
+            public long Owner;
+            public Kind Kind;
+            public float Meters;
+        }
+
+        static readonly OwnerBalanceBook<ZDOID> _book = new OwnerBalanceBook<ZDOID>();
+        static readonly List<ShedCandidate> _shed = new List<ShedCandidate>();
+        static readonly Dictionary<long, bool> _overloaded = new Dictionary<long, bool>();
+        static readonly Dictionary<long, int> _shedFrom = new Dictionary<long, int>();
+        static double _prunedAt;
+
+        public static void Install(Harmony harmony, OwnerHysteresisMode mode, OwnerBalanceMode balance)
+        {
+            if (mode == OwnerHysteresisMode.Off && balance == OwnerBalanceMode.Off)
                 return;
-            if (Patcher.Patch(harmony, typeof(ZDOMan), "ReleaseNearbyZDOS", new[] { typeof(Vector3), typeof(long) },
+            if (!Patcher.Patch(harmony, typeof(ZDOMan), "ReleaseNearbyZDOS", new[] { typeof(Vector3), typeof(long) },
                     typeof(OwnerHandoff), prefix: nameof(ReleaseNearbyZDOSPrefix)))
-            {
-                Mode = mode;
+                return;
+            Patched = true;
+            Mode = mode;
+            Balance = balance;
+            if (mode != OwnerHysteresisMode.Off)
                 Plugin.Log.LogInfo(mode == OwnerHysteresisMode.On
                     ? "Histerese de dono ligada: o dono so perde a posse quando o objeto sai do que ele tem carregado."
                     : "Histerese de dono em medicao: comportamento do jogo, contando o que seria segurado.");
-            }
+            if (balance != OwnerBalanceMode.Off)
+                Plugin.Log.LogInfo(balance == OwnerBalanceMode.On
+                    ? "Balanceamento de criaturas ligado: dono com upload no teto passa criaturas para quem esta perto e tem folga."
+                    : "Balanceamento de criaturas em medicao: conta o que passaria de dono, sem passar.");
         }
 
         // Falhou uma vez = volta ao metodo do jogo para sempre, em vez de repetir a excecao a cada 2 s.
@@ -76,6 +104,8 @@ namespace ValheimMetrics.Tuning
             ChunkLoader.LoadedAreas.FindOwnershipObjects(zdoman, zone,
                 new SimulationDistance(synced.NearSimulationDistance, 0, synced.IsClassic), _near, null, uid);
             var self = View(net, uid);
+            double now = Time.realtimeSinceStartupAsDouble;
+            bool receiving = Receiving(net, uid, creatures, now);
 
             foreach (var zdo in _near)
             {
@@ -98,7 +128,11 @@ namespace ValheimMetrics.Tuning
                     ownerView = View(net, owner);
                     ownerActive = ownerView.Peer && ZNetScene.InActiveArea(position, ownerView.Zone);
                     if (ownerActive)
+                    {
+                        if (receiving)
+                            ConsiderShed(net, zdo, owner, ownerView, self, position, creatures, now);
                         continue;
+                    }
                 }
 
                 var kind = Classify(zdo, creatures);
@@ -123,7 +157,79 @@ namespace ValheimMetrics.Tuning
                     Claims[k]++;
                 }
             }
+
+            if (receiving && _shed.Count > 0)
+                Shed(net, uid, now);
         }
+
+        // Este jogador pode receber criaturas agora? Antes de saber o que e criatura (boot), nao.
+        static bool Receiving(ZNet net, long uid, HashSet<int> creatures, double now)
+        {
+            _shed.Clear();
+            _overloaded.Clear();
+            if (Balance == OwnerBalanceMode.Off || creatures == null)
+                return false;
+            if (now - _prunedAt > OwnerBalanceRules.CreatureCooldownSeconds)
+            {
+                _book.Prune(now);
+                _prunedAt = now;
+            }
+            if (!_book.CanReceive(uid, now))
+                return false;
+            return PeerUpload.InBytes(net.GetPeer(uid), now) is float upload && OwnerBalanceRules.Spare(upload);
+        }
+
+        static void ConsiderShed(ZNet net, ZDO zdo, long owner, OwnerView ownerView, OwnerView self, Vector3 position,
+            HashSet<int> creatures, double now)
+        {
+            if (!_overloaded.TryGetValue(owner, out var overloaded))
+            {
+                overloaded = PeerUpload.InBytes(net.GetPeer(owner), now) is float upload
+                    && OwnerBalanceRules.Overloaded(upload);
+                _overloaded[owner] = overloaded;
+            }
+            if (!overloaded)
+                return;
+            var kind = Classify(zdo, creatures);
+            if (kind != Kind.Creature && kind != Kind.Tamed)
+                return;
+            if (SummonNames.IsSummon(zdo.GetPrefab()) || !_book.CanMove(zdo.m_uid, now))
+                return;
+            float meters = Vector3.Distance(position, self.Position);
+            if (!OwnerBalanceRules.Closer(meters, Vector3.Distance(position, ownerView.Position)))
+                return;
+            _shed.Add(new ShedCandidate { Zdo = zdo, Owner = owner, Kind = kind, Meters = meters });
+        }
+
+        // As mais perto de quem recebe primeiro, no maximo MaxPerPass por vez.
+        static void Shed(ZNet net, long uid, double now)
+        {
+            _shed.Sort((a, b) => a.Meters.CompareTo(b.Meters));
+            _shedFrom.Clear();
+            int count = Math.Min(_shed.Count, OwnerBalanceRules.MaxPerPass);
+            for (int i = 0; i < count; i++)
+            {
+                var c = _shed[i];
+                if (Balance == OwnerBalanceMode.On)
+                    c.Zdo.SetOwner(uid);
+                BalanceMoves[(int)c.Kind]++;
+                _book.Moved(c.Zdo.m_uid, uid, now);
+                _shedFrom.TryGetValue(c.Owner, out var n);
+                _shedFrom[c.Owner] = n + 1;
+            }
+
+            var receiver = net.GetPeer(uid);
+            foreach (var pair in _shedFrom)
+            {
+                var giver = net.GetPeer(pair.Key);
+                Plugin.Log.LogInfo($"Balanceamento{(Balance == OwnerBalanceMode.On ? "" : " (medicao)")}: {pair.Value} criatura(s) de " +
+                    $"{giver?.m_playerName} ({Kb(giver, now)} KB/s) para {receiver?.m_playerName} ({Kb(receiver, now)} KB/s).");
+            }
+            _shed.Clear();
+        }
+
+        static string Kb(ZNetPeer peer, double now) =>
+            PeerUpload.InBytes(peer, now) is float bytes ? (bytes / 1000f).ToString("0") : "?";
 
         static bool Loads(OwnerView view, Vector2s sector) =>
             view.Peer && OwnerHandoffRules.Loaded(view.Zone.x, view.Zone.y, sector.x, sector.y, view.Near, view.Classic);
@@ -140,7 +246,8 @@ namespace ValheimMetrics.Tuning
                 if (peer != null)
                 {
                     view.Peer = true;
-                    view.Zone = ZoneSystem.GetZone(peer.GetRefPos());
+                    view.Position = peer.GetRefPos();
+                    view.Zone = ZoneSystem.GetZone(view.Position);
                     view.Near = peer.m_simulationDistance.NearSimulationDistance;
                     view.Classic = peer.m_simulationDistance.IsClassic;
                 }

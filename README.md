@@ -41,6 +41,7 @@ Opt-in, all off when empty (set in `.env`, then `docker compose up -d`):
 | `VALHEIM_SERVER_FPS`, `VALHEIM_ZDO_SEND_LIMIT_BYTES`, `VALHEIM_STEAM_SEND_RATE_BYTES` | more sync bandwidth per player (less mob teleporting) |
 | `VALHEIM_DEFER_ASSET_UNLOAD=1` | hourly 0.8 s freeze waits for empty server |
 | `VALHEIM_OWNER_HYSTERESIS=on` | stops ownership ping-pong on bases at zone borders |
+| `VALHEIM_OWNER_BALANCE=on` | creatures move from a player whose upload is maxed out to a nearby player with room (less mob teleporting) |
 | `VALHEIM_SIGN_ICONS_CATALOG` | `:wood:` on a sign draws the item icon; long sign text |
 | `VALHEIM_ACCESS_PORT` | whitelist join requests page (**no auth** — proxy it) |
 | `VALHEIM_SLOT_MARKS=1` | reserved chest slots (marking needs the Ghost Stacks client mod) |

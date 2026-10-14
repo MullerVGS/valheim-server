@@ -6,6 +6,9 @@ namespace ValheimMetrics.Tuning
     // Off = metodo do jogo intocado. Measure = replica do jogo que so conta o que a histerese seguraria.
     public enum OwnerHysteresisMode { Off, Measure, On }
 
+    // Off = jogo. Measure = conta as criaturas que passaria de dono sem passar. On = passa.
+    public enum OwnerBalanceMode { Off, Measure, On }
+
     // Ajustes opt-in do motor de rede, lidos do ambiente. Variavel ausente = comportamento do jogo.
     public sealed class TuningSettings
     {
@@ -14,6 +17,7 @@ namespace ValheimMetrics.Tuning
         public const string SteamSendRateVariable = "VALHEIM_STEAM_SEND_RATE_BYTES";
         public const string DeferAssetUnloadVariable = "VALHEIM_DEFER_ASSET_UNLOAD";
         public const string OwnerHysteresisVariable = "VALHEIM_OWNER_HYSTERESIS";
+        public const string OwnerBalanceVariable = "VALHEIM_OWNER_BALANCE";
 
         // PresentManager.RequestTargetFrameRate troca valor fora de 30..360 por -1, que e FPS sem teto.
         public const int MinFps = 30;
@@ -34,6 +38,7 @@ namespace ValheimMetrics.Tuning
         public int? SteamSendRateBytes { get; private set; }
         public bool DeferAssetUnload { get; private set; }
         public OwnerHysteresisMode OwnerHysteresis { get; private set; }
+        public OwnerBalanceMode OwnerBalance { get; private set; }
         public IReadOnlyList<string> Warnings => _warnings;
 
         readonly List<string> _warnings = new List<string>();
@@ -50,6 +55,12 @@ namespace ValheimMetrics.Tuning
                 "on" => OwnerHysteresisMode.On,
                 "measure" => OwnerHysteresisMode.Measure,
                 _ => OwnerHysteresisMode.Off,
+            };
+            s.OwnerBalance = s.ReadWord(env, OwnerBalanceVariable, "on", "measure", "off") switch
+            {
+                "on" => OwnerBalanceMode.On,
+                "measure" => OwnerBalanceMode.Measure,
+                _ => OwnerBalanceMode.Off,
             };
             return s;
         }
