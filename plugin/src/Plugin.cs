@@ -5,6 +5,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
 using ValheimMetrics.Access;
+using ValheimMetrics.Calendar;
 using ValheimMetrics.Chests;
 using ValheimMetrics.ChunkLoader;
 using ValheimMetrics.Collectors;
@@ -22,7 +23,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.24.0";
+        public const string Version = "0.25.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -63,6 +64,7 @@ namespace ValheimMetrics
                 new SummonNames(),
                 new SummonTravel(),
                 new ChunkLoader.ChunkLoader(),
+                new DayDisplay(),
                 new TrafficCollector(),
                 new TuningCollector(),
                 new MapCollector(),
@@ -119,6 +121,7 @@ namespace ValheimMetrics
             SummonNames.OnFrame(now);
             SummonTravel.OnFrame(now);
             ChunkLoader.ChunkLoader.OnFrame(now);
+            DayDisplay.OnFrame(now);
             OwnershipCollector.OnFrame(now);
             MapCollector.OnFrame();
             if (now < _nextSnapshot)

@@ -122,6 +122,10 @@ services:
       # loaded and simulated without players nearby. Empty = vanilla. See README.
       VALHEIM_CHUNK_LOADER: ${VALHEIM_CHUNK_LOADER:-}
 
+      # Day display (requires BEPINEX=true): N = the dawn message shows day N, except in the 7 days
+      # before each 365-day year, which show the real day and a countdown. Empty = vanilla. See README.
+      VALHEIM_SHOWN_DAY: ${VALHEIM_SHOWN_DAY:-}
+
       # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin grava os dados do site
       # (terreno, explorado das mesas, construcoes). Vazio = sem arquivos; as metricas saem igual. Ver README.
       VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}

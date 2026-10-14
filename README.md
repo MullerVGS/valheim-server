@@ -50,6 +50,7 @@ Opt-in, all off when empty (set in `.env`, then `docker compose up -d`):
 | `VALHEIM_SUMMON_NAMES=1` | summons come back with the name you gave them |
 | `VALHEIM_SUMMON_TRAVEL=1` | summons following you come along through portals and dungeon doors |
 | `VALHEIM_CHUNK_LOADER=1` | every sign reading `chunkloader` keeps its area loaded with nobody around |
+| `VALHEIM_SHOWN_DAY=N` | dawn always says day N, except a countdown in the week before each 365-day year |
 | `VALHEIM_MAP_DIR` | writes map data for the site |
 
 Whitelist join requests work without the page: `/unban <n>` in game chat.

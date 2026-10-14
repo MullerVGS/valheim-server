@@ -152,6 +152,14 @@ Metrics: `valheim_server_reference_position_meters` (primary point), `valheim_se
 `valheim_chunk_loader_anchor_position_meters{anchor,axis}` (each active sign's coordinates).
 `valheim_chunk_loader_moves_total` still counts primary sign changes.
 
+## Day display
+
+`VALHEIM_SHOWN_DAY=N`: the "Day" message at dawn shows day N. In the 7 days before each new year (years
+are 365 game days, year 1 starts at day 0) it shows the real day and `D-<days> para o Ano <year>`
+instead. That message is local to each client, so the server shows its own center message over it,
+three times (0.5, 2 and 4 s after the server's dawn) to cover slower clients: the real day can flash
+for a moment and stays in the message log. `valheim_day_display_{mornings,messages}_total`.
+
 ## Map
 
 Positions use Web Mercator so Grafana Geomap works: `lon = x / 17476.27`, `lat = z / 17476.27`.
