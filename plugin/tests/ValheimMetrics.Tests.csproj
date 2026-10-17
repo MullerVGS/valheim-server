@@ -43,6 +43,9 @@
     <Compile Include="../src/Summons/SummonBook.cs" />
     <Compile Include="../src/Summons/SummonTrips.cs" />
     <Compile Include="../src/Calendar/DayRules.cs" />
+    <Compile Include="../src/Recording/RecordFormat.cs" />
+    <Compile Include="../src/Recording/RecordFile.cs" />
+    <Compile Include="../src/Recording/SessionRules.cs" />
   </ItemGroup>
 
   <ItemGroup>

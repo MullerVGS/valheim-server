@@ -182,6 +182,27 @@ instead. That message is local to each client, so the server shows its own cente
 three times (0.5, 2 and 4 s after the server's dawn) to cover slower clients: the real day can flash
 for a moment and stays in the message log. `valheim_day_display_{mornings,messages}_total`.
 
+## Recorder
+
+`VALHEIM_RECORDER=1`: when a boss's ZDO reaches the server with a player within `VALHEIM_RECORDER_RADIUS`
+(default 150 m), the plugin records everything around it to `<save dir>/recordings/<time>-<boss>.vrec.gz`
+until the boss has been gone (dead, or nobody in range) for 45 s. `manual` only records on request.
+
+It is passive: the server keeps doing exactly what it did and sends nothing new. It copies each ZDO the
+clients send (full `ZDO.Serialize` data: position, rotation, health, animator parameters, equipment) and
+each routed RPC aimed at the area or at nobody in particular (animation triggers, hits, chat), plus a
+snapshot of what was already in the area, built a few hundred microseconds per frame. The area is a
+sphere around each anchor, so a dungeon interior above the arena stays out. Compression runs on its
+own thread; if the disk falls behind, whole chunks are dropped rather than stalling the game, and a
+`dropped` marker says where. Cost and size are exported as `valheim_recorder_*`.
+
+Admins can drive it from a client mod with the routed RPC `valheim-server.recorder` (string command,
+string text), sent to the server: `hello`, `start <label>` (record around me until `stop`, even with no
+boss), `stop`, `mark <text>`. The server answers only those peers, with `ShowMessage` and
+`valheim-server.recorder.state` (bool active, string label, double seconds), so vanilla players never
+notice. Format: `plugin/src/Recording/RecordFormat.cs`; `tools/recordings/inspect_recording.py`
+summarizes a file or follows one object (`--track`).
+
 ## Map
 
 Positions use Web Mercator so Grafana Geomap works: `lon = x / 17476.27`, `lat = z / 17476.27`.

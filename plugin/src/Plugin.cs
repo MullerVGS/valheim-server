@@ -12,6 +12,7 @@ using ValheimMetrics.Collectors;
 using ValheimMetrics.Exposition;
 using ValheimMetrics.Fire;
 using ValheimMetrics.Map;
+using ValheimMetrics.Recording;
 using ValheimMetrics.Signs;
 using ValheimMetrics.Summons;
 using ValheimMetrics.Traffic;
@@ -25,7 +26,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.27.0";
+        public const string Version = "0.28.0";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;
@@ -69,6 +70,7 @@ namespace ValheimMetrics
                 new SummonTravel(),
                 new ChunkLoader.ChunkLoader(),
                 new DayDisplay(),
+                new Recorder(),
                 new TrafficCollector(),
                 new TuningCollector(),
                 new MapCollector(),
@@ -128,6 +130,7 @@ namespace ValheimMetrics
             SummonTravel.OnFrame(now);
             ChunkLoader.ChunkLoader.OnFrame(now);
             DayDisplay.OnFrame(now);
+            Recorder.OnFrame(now);
             OwnershipCollector.OnFrame(now);
             MapCollector.OnFrame();
             if (now < _nextSnapshot)
@@ -210,5 +213,7 @@ namespace ValheimMetrics
         internal Plugin Plugin;
 
         void Update() => Plugin.Tick();
+
+        void OnApplicationQuit() => Recorder.Shutdown();
     }
 }

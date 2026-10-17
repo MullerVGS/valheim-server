@@ -134,6 +134,12 @@ services:
       # before each 365-day year, which show the real day and a countdown. Empty = vanilla. See README.
       VALHEIM_SHOWN_DAY: ${VALHEIM_SHOWN_DAY:-}
 
+      # Recorder (requires BEPINEX=true): 1 = a boss fight is recorded to /config/recordings by itself,
+      # and admins with a client mod can record any scene; manual = only the latter. Radius in meters
+      # (default 150). Passive: copies what clients already send. Empty = off. See README.
+      VALHEIM_RECORDER: ${VALHEIM_RECORDER:-}
+      VALHEIM_RECORDER_RADIUS: ${VALHEIM_RECORDER_RADIUS:-}
+
       # Mapa (exige BEPINEX=true): pasta, dentro do container, onde o plugin grava os dados do site
       # (terreno, explorado das mesas, construcoes). Vazio = sem arquivos; as metricas saem igual. Ver README.
       VALHEIM_MAP_DIR: ${VALHEIM_MAP_DIR:-}
