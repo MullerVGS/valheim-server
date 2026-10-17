@@ -24,7 +24,7 @@ namespace ValheimMetrics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "valheim-server.metrics";
-        public const string Version = "0.26.1";
+        public const string Version = "0.26.2";
         const int DefaultPort = 9780;
 
         internal static ManualLogSource Log;

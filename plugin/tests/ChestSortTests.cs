@@ -143,7 +143,7 @@ namespace ValheimMetrics.Tests
 
         static SortChest Chest(int width, int height, params GameFormat.Item[] items)
         {
-            Assert.True(ChestItems.TryParse(GameFormat.Chest(109, items), out var parsed));
+            Assert.True(ChestItems.TryParse(GameFormat.Chest(110, items), out var parsed));
             return new SortChest { Items = parsed, Width = width, Height = parsed.Height(height) };
         }
 
@@ -155,7 +155,7 @@ namespace ValheimMetrics.Tests
 
         static SlotMark Mark(int x, int y, string prefab) => new SlotMark(new Slot(x, y), new ItemKind(prefab, 1, 0));
 
-        static byte[] Bytes(params GameFormat.Item[] items) => GameFormat.Chest(109, items);
+        static byte[] Bytes(params GameFormat.Item[] items) => GameFormat.Chest(110, items);
 
         static readonly SortChest[] None = new SortChest[0];
 
@@ -373,14 +373,14 @@ namespace ValheimMetrics.Tests
                 X = 1, Y = 1, PrefabHash = 77, Stack = from, Quality = 2, Variant = 5, CrafterId = 9, CrafterName = "ção",
                 WorldLevel = 3, PickedUp = true, Custom = new Dictionary<string, string> { ["a"] = "b" }, Cheated = true,
             };
-            Assert.True(ChestItems.TryParse(GameFormat.Chest(109, item), out var chest));
+            Assert.True(ChestItems.TryParse(GameFormat.Chest(110, item), out var chest));
 
             chest.Items[0] = chest.Items[0].Rewrite(6, 3, to);
 
             item.X = 6;
             item.Y = 3;
             item.Stack = to;
-            Assert.Equal(GameFormat.Chest(109, item), chest.ToBytes());
+            Assert.Equal(GameFormat.Chest(110, item), chest.ToBytes());
             Assert.True(ChestItems.TryParse(chest.ToBytes(), out var back));
             Assert.Equal((6, 3, to, 2), (back.Items[0].X, back.Items[0].Y, back.Items[0].Stack, back.Items[0].Quality));
         }

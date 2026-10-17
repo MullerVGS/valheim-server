@@ -160,7 +160,7 @@ namespace ValheimMetrics.Chests
             var bytes = zdo.GetByteArray(ZDOVars.s_items);
             ChestItems chest;
             if (bytes == null)
-                chest = new ChestItems { Version = ChestItems.ChunksNCheats };
+                chest = new ChestItems { Version = ChestItems.NewCheats };
             else if (!ChestItems.TryParse(bytes, out chest))
             {
                 _skipped++;

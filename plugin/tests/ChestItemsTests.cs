@@ -92,6 +92,7 @@ namespace ValheimMetrics.Tests
         [Theory]
         [InlineData(108)]
         [InlineData(109)]
+        [InlineData(110)]
         public void ReadsEveryFieldAndKeepsTheBytes(int version)
         {
             var bytes = GameFormat.Chest(version,
@@ -122,7 +123,7 @@ namespace ValheimMetrics.Tests
         [Theory]
         [InlineData(106)]
         [InlineData(107)]
-        [InlineData(110)]
+        [InlineData(111)]
         public void LeavesOtherVersionsAlone(int version)
         {
             Assert.False(ChestItems.TryParse(GameFormat.Chest(version, new GameFormat.Item()), out _));
@@ -142,6 +143,7 @@ namespace ValheimMetrics.Tests
         [InlineData(108, 1)]
         [InlineData(109, 1)]
         [InlineData(109, 3)]
+        [InlineData(110, 3)]
         public void GhostIsWhatTheGameWritesForAStackOfZero(int version, int quality)
         {
             var expected = GameFormat.Chest(version, new GameFormat.Item { X = 5, Y = 2, WorldLevel = 1, Quality = quality, Stack = 0, PrefabHash = 999 });
@@ -152,6 +154,34 @@ namespace ValheimMetrics.Tests
             Assert.Equal(expected, chest.ToBytes());
             Assert.True(ChestItems.TryParse(chest.ToBytes(), out var back));
             Assert.Equal(0, back.Items[0].Stack);
+        }
+
+        // 1.0.20: Inventory.Load le o byte da 109 e o descarta; Save grava 110 com m_cheated.
+        [Theory]
+        [InlineData(108)]
+        [InlineData(109)]
+        public void UpgradeIsWhatTheGameSavesAfterLoadingTheOldVersion(int version)
+        {
+            var rich = Rich();
+            Assert.True(ChestItems.TryParse(GameFormat.Chest(version, rich, new GameFormat.Item { X = 1, Stack = 0, PrefabHash = 222 }), out var chest));
+
+            chest.Upgrade();
+
+            rich.Cheated = false;
+            Assert.Equal(GameFormat.Chest(110, rich, new GameFormat.Item { X = 1, Stack = 0, PrefabHash = 222 }), chest.ToBytes());
+            Assert.All(chest.Items, item => Assert.False(item.Cheated));
+        }
+
+        [Fact]
+        public void UpgradeKeepsTheMarkOfTheCurrentVersion()
+        {
+            var bytes = GameFormat.Chest(110, Rich());
+            Assert.True(ChestItems.TryParse(bytes, out var chest));
+
+            chest.Upgrade();
+
+            Assert.True(chest.Items[0].Cheated);
+            Assert.Equal(bytes, chest.ToBytes());
         }
     }
 

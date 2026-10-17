@@ -6,7 +6,7 @@ namespace ValheimMetrics.Chests
 {
     // O conteudo de um bau como o jogo grava em ZDOVars.s_items (Inventory.Save / ItemData.Save).
     // Cada item fica com os bytes originais: o servidor so tira ou poe itens inteiros e nunca reescreve
-    // o que nao entende. Versao fora de 108..109 nao e mexida (update do jogo muda o formato).
+    // o que nao entende. Versao fora de 108..110 nao e mexida (update do jogo muda o formato).
     public sealed class ChestItem
     {
         public int PrefabHash;
@@ -22,10 +22,18 @@ namespace ValheimMetrics.Chests
         const int HeadLength = 8;
         const byte CheatedFlag = 1;
 
-        // Ultimo byte do item no formato 109 (ItemData.m_cheated). Juntar pilhas espalha a marca, como no jogo.
+        // Ultimo byte do item no formato 110 (ItemData.m_cheated). Juntar pilhas espalha a marca, como no jogo.
         public bool Cheated => (Raw[Raw.Length - 1] & CheatedFlag) != 0;
 
         public void MarkCheated() => Raw[Raw.Length - 1] |= CheatedFlag;
+
+        // Byte de cheat zerado como o 1.0.20 grava um item que carregou de 108 (sem o byte) ou 109.
+        internal void ClearCheatByte(bool missing)
+        {
+            if (missing)
+                Array.Resize(ref Raw, Raw.Length + 1);
+            Raw[Raw.Length - 1] = 0;
+        }
         const byte QualityFlag = 4;
         const byte StackFlag = 8;
 
@@ -68,6 +76,7 @@ namespace ValheimMetrics.Chests
     {
         public const int Smaller = 108;
         public const int ChunksNCheats = 109;
+        public const int NewCheats = 110;
 
         public int Version;
         public readonly List<ChestItem> Items = new List<ChestItem>();
@@ -82,7 +91,7 @@ namespace ValheimMetrics.Chests
                 using (var reader = new BinaryReader(new MemoryStream(data)))
                 {
                     var result = new ChestItems { Version = reader.ReadInt32() };
-                    if (result.Version < Smaller || result.Version > ChunksNCheats)
+                    if (result.Version < Smaller || result.Version > NewCheats)
                         return false;
                     int count = reader.ReadUInt16();
                     for (int i = 0; i < count; i++)
@@ -138,6 +147,18 @@ namespace ValheimMetrics.Chests
             if ((num & 0x80) != 0)
                 num = ((num & 0x7F) << 8) | reader.ReadByte();
             return num;
+        }
+
+        // O que o 1.0.20 faz ao carregar e salvar o bau: a 108 ganha o byte de cheat, a marca da 109 se perde
+        // (o jogo nao le mais o byte dessa versao) e tudo vira 110. Itens de baus em versoes diferentes so se
+        // misturam depois disso.
+        public void Upgrade()
+        {
+            if (Version == NewCheats)
+                return;
+            foreach (var item in Items)
+                item.ClearCheatByte(Version < ChunksNCheats);
+            Version = NewCheats;
         }
 
         public byte[] ToBytes()
