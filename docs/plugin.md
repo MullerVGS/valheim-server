@@ -126,6 +126,15 @@ Planted means some segment of the vine (or of segments touching it) stands withi
 soil, where the sapling had to be; the server reads it from each zone's `_TerrainCompiler` ZDO and rereads
 a zone when it changes. Wild Ashlands vines keep the game's rule.
 
+## Training dummies
+
+`VALHEIM_DUMMY_HEALTH_FACTOR=N` (1–100): the T.W.I.G. (`piece_TrainingDummy`, 2500 health, full in 30 s) gets
+N× health and regen. Its health is `m_health × level` and its regen `max / 30` per second, both on the
+owning client, but the level comes from the ZDO. When a dummy's ZDO reaches the server (built, hit,
+loaded), the server writes level N, max health and health (same fraction) ahead in revision, and the
+owner adopts them; reloads keep them. Level 4+ shows no stars. The dummy has no `CharacterDrop`, so the
+level changes nothing else. `1` brings dummies back to the game's health; empty leaves them as they are.
+
 ## Summon names
 
 `VALHEIM_SUMMON_NAMES=1`: summons (Dead Raiser skeletons, any tame born with a random name) reuse names the

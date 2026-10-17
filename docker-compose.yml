@@ -114,6 +114,10 @@ services:
       # between them on the same face, still after the game's respawn time, no client mod. Empty = vanilla. See README.
       VALHEIM_VINE_BERRY_SPACING: ${VALHEIM_VINE_BERRY_SPACING:-}
 
+      # Training dummies (requires BEPINEX=true): N = the T.W.I.G. gets N times the game's health and
+      # regen (1..100, 1 = back to vanilla), no client mod. Empty = vanilla. See README.
+      VALHEIM_DUMMY_HEALTH_FACTOR: ${VALHEIM_DUMMY_HEALTH_FACTOR:-}
+
       # Nomes de invocacao (exige BEPINEX=true): 1 = esqueleto do cajado volta com o nome que o jogador
       # deu, sem mod no cliente. Vazio = jogo. Ver README.
       VALHEIM_SUMMON_NAMES: ${VALHEIM_SUMMON_NAMES:-}
